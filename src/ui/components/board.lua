@@ -1,32 +1,39 @@
+local Surface = require("src.ui.components.surface")
+
 local Board = {}
 
 local function drawDeveloperPlaceholder(theme, rect, name, work)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 24, 24)
+    local y = Surface.draw(rect, {
+        color = theme.colors.surface2,
+        shadowOffset = 3,
+    })
+
+    love.graphics.setColor(1, 1, 1, 0.9)
 
     local headX = rect.x + rect.w * 0.50
-    local headY = rect.y + rect.h * 0.38
+    local headY = y + rect.h * 0.38
     local headR = rect.w * 0.18
 
     love.graphics.circle("line", headX, headY, headR)
     love.graphics.arc("line", "open", headX, headY + rect.h * 0.15, rect.w * 0.28, math.pi * 1.05, math.pi * 1.95)
 
-    theme:drawTextRightWithShadow(tostring(work) .. " work", rect.x, rect.y + 10, rect.w - 8, theme.fonts.small, { 1, 1, 1, 1 })
-    theme:drawTextCenteredWithShadow(name, rect.x, rect.y + rect.h - 44, rect.w, theme.fonts.large, { 0.90, 0.20, 0.18, 1 })
+    theme:drawTextRightWithShadow(tostring(work) .. " work", rect.x, y + 10, rect.w - 8, theme.fonts.small, { 1, 1, 1, 1 })
+    theme:drawTextCenteredWithShadow(name, rect.x, y + rect.h - 44, rect.w, theme.fonts.large, { 0.90, 0.20, 0.18, 1 })
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
-local function drawSlot(rect)
-    love.graphics.setColor(0.62, 0.67, 0.74, 0.85)
-    love.graphics.setLineWidth(1)
-    love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 7, 7)
+local function drawSlot(theme, rect)
+    Surface.draw(rect, {
+        color = theme.colors.surface3,
+        shadowOffset = 2,
+    })
 end
 
 local function drawFeatureCardInBoard(theme, rect, feature, highlight, formatMoney)
-    love.graphics.setColor(feature.color)
-    love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 8, 8)
-
-    love.graphics.setColor(0, 0, 0, 0.2)
-    love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 8, 8)
+    Surface.draw(rect, {
+        color = feature.color,
+        shadowOffset = 3,
+    })
 
     theme:drawTextWrappedWithShadow(feature.name, rect.x + 8, rect.y + rect.h * 0.34, rect.w - 16, "center", theme.fonts.small, theme.colors.text)
 
@@ -37,21 +44,23 @@ local function drawFeatureCardInBoard(theme, rect, feature, highlight, formatMon
     theme:drawTextWrappedWithShadow(bottomText, rect.x + 8, rect.y + rect.h - 36, rect.w - 16, "center", theme.fonts.tiny, theme.colors.text)
 
     if highlight then
-        love.graphics.setColor(0.18, 0.78, 0.45, 1)
+        love.graphics.setColor(theme.colors.highlight)
         love.graphics.setLineWidth(3)
         love.graphics.rectangle("line", rect.x - 2, rect.y - 2, rect.w + 4, rect.h + 4, 10, 10)
         love.graphics.setLineWidth(1)
+        love.graphics.setColor(1, 1, 1, 1)
     end
 end
 
 local function drawShipButton(theme, rect)
-    love.graphics.setColor(0.24, 0.80, 0.63, 1)
-    love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 10, 10)
-    theme:drawTextCenteredWithShadow("Ship!", rect.x, rect.y + rect.h * 0.21, rect.w, theme.fonts.normal, theme.colors.text)
+    local y = Surface.draw(rect, {
+        color = theme.colors.success,
+        shadowOffset = 3,
+    })
+    theme:drawTextCenteredWithShadow("Ship!", rect.x, y + rect.h * 0.21, rect.w, theme.fonts.normal, theme.colors.text)
 end
 
 function Board.draw(theme, game, layout, formatMoney)
-    local labelY = layout.boardTop - 26
     local labels = { "in progress", "testing", "ready for rollout", "done!" }
     local firstRow = layout.rows[1]
     local cols = {
@@ -61,8 +70,14 @@ function Board.draw(theme, game, layout, formatMoney)
         firstRow.doneRect,
     }
 
+    local headerFont = theme.fonts.small
+    local labelY = firstRow.inProgressRect.y - headerFont:getHeight() - 6
+    if labelY < 8 then
+        labelY = 8
+    end
+
     for i, rect in ipairs(cols) do
-        theme:drawTextCenteredWithShadow(labels[i], rect.x, labelY, rect.w, theme.fonts.normal, theme.colors.text)
+        theme:drawTextCenteredWithShadow(labels[i], rect.x, labelY, rect.w, headerFont, theme.colors.text)
     end
 
     for i, row in ipairs(game.rows) do
@@ -70,10 +85,10 @@ function Board.draw(theme, game, layout, formatMoney)
 
         drawDeveloperPlaceholder(theme, lrow.devRect, row.developer.name, row.developer.baseWork)
 
-        drawSlot(lrow.inProgressRect)
-        drawSlot(lrow.testingRect)
-        drawSlot(lrow.rolloutRect)
-        drawSlot(lrow.doneRect)
+        drawSlot(theme, lrow.inProgressRect)
+        drawSlot(theme, lrow.testingRect)
+        drawSlot(theme, lrow.rolloutRect)
+        drawSlot(theme, lrow.doneRect)
 
         if row.inProgress then
             local margin = 5
@@ -142,6 +157,7 @@ function Board.draw(theme, game, layout, formatMoney)
         if row.doneFlash and row.doneFlash > 0 then
             love.graphics.setColor(0.20, 0.84, 0.67, row.doneFlash)
             love.graphics.rectangle("line", lrow.doneRect.x - 2, lrow.doneRect.y - 2, lrow.doneRect.w + 4, lrow.doneRect.h + 4, 8, 8)
+            love.graphics.setColor(1, 1, 1, 1)
         end
     end
 end

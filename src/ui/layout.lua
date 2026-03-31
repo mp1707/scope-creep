@@ -1,11 +1,13 @@
 local Layout = {}
+local Theme = require("src.ui.theme")
 
-local BASE_SCREEN_W = 1920
-local BASE_SCREEN_H = 1080
+local BASE_SCREEN_W = Theme.screen.width
+local BASE_SCREEN_H = Theme.screen.height
 
 function Layout.compute(state)
-    local w, h = love.graphics.getDimensions()
-    local scale = math.min(w / BASE_SCREEN_W, h / BASE_SCREEN_H)
+    local w = BASE_SCREEN_W
+    local h = BASE_SCREEN_H
+    local scale = 1
 
     local sidebarW = math.floor(340 * scale)
     local sidebarX = w - sidebarW - math.floor(28 * scale)

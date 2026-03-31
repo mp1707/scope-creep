@@ -1,5 +1,6 @@
 local Sound = require("src.core.sound")
 local HotReload = require("src.core.hot_reload")
+local Scaling = require("src.core.scaling")
 local Theme = require("src.ui.theme")
 local Layout = require("src.ui.layout")
 local BoardView = require("src.ui.components.board")
@@ -712,6 +713,15 @@ end
 
 local function updateHandAnimations(dt)
     local mx, my = love.mouse.getPosition()
+    if _G.screenToGame then
+        mx, my = _G.screenToGame(mx, my)
+    end
+    local mouseValid = mx ~= nil and my ~= nil
+    if mx == nil or my == nil then
+        mx = -10000
+        my = -10000
+    end
+
     local hoveredCard, hoveredIndex = getTopHandCardAtPoint(mx, my)
 
     local handCount = #game.hand
@@ -773,7 +783,7 @@ local function updateHandAnimations(dt)
 
     if game.drag and game.drag.card then
         local drag = game.drag
-        if not drag.isDragging then
+        if not drag.isDragging and mouseValid then
             local dx = mx - drag.startX
             local dy = my - drag.startY
             if dx * dx + dy * dy > 64 then
@@ -782,7 +792,7 @@ local function updateHandAnimations(dt)
             end
         end
 
-        if drag.isDragging then
+        if drag.isDragging and mouseValid then
             drag.card.x = mx - drag.offsetX
             drag.card.y = my - drag.offsetY
         end
@@ -968,6 +978,7 @@ function love.load(isReload)
     love.graphics.setDefaultFilter("nearest", "nearest")
 
     Theme:load()
+    Scaling.init()
 
     Sound:init()
 
@@ -995,60 +1006,66 @@ function love.update(dt)
 end
 
 function love.draw()
-    love.graphics.clear(Theme.colors.bg)
-
-    if game.phase == "sprint" then
-        BoardView.draw(Theme, game, game.layout, formatMoney)
-        ButtonsView.drawSprint(Theme, game.layout, buttonEnabled)
-    else
-        RetrospectiveView.draw(
-            Theme,
-            game,
-            game.layout,
-            getApplicantRect,
-            function(rect, label, enabled, color)
-                ButtonsView.drawButton(Theme, rect, label, enabled, color)
-            end
-        )
-    end
-
-    SidebarView.draw(Theme, game, game.layout, formatMoney, getDaysRemaining)
-
-    if game.phase == "sprint" then
-        HandView.draw(Theme, game, game.layout, getTechDebtWorkPenalty, formatMoney)
-
-        if game.pendingSupport then
-            Theme:drawTextCenteredWithShadow(
-                "Select a feature in progress",
-                game.layout.boardX,
-                18,
-                game.layout.boardRight - game.layout.boardX,
-                Theme.fonts.normal,
-                { 0.17, 0.75, 0.44, 1 }
+    Scaling.draw(function()
+        if game.phase == "sprint" then
+            BoardView.draw(Theme, game, game.layout, formatMoney)
+            ButtonsView.drawSprint(Theme, game.layout, buttonEnabled, game.pressedButtonId)
+        else
+            RetrospectiveView.draw(
+                Theme,
+                game,
+                game.layout,
+                getApplicantRect,
+                function(rect, label, enabled, color)
+                    ButtonsView.drawButton(Theme, rect, label, enabled, color, false)
+                end
             )
         end
 
-        if game.techDebt >= 50 then
-            local penalty = "+1 Work on all Features"
-            if game.techDebt >= 100 then
-                penalty = "+2 Work on all Features"
-            end
-            Theme:drawTextWithShadow(
-                penalty,
-                game.layout.boardX,
-                game.layout.boardTop - 54,
-                Theme.fonts.small,
-                Theme.colors.textDanger
-            )
-        end
-    end
+        SidebarView.draw(Theme, game, game.layout, formatMoney, getDaysRemaining)
 
-    love.graphics.setFont(Theme.fonts.small)
-    HotReload:draw()
+        if game.phase == "sprint" then
+            HandView.draw(Theme, game, game.layout, getTechDebtWorkPenalty, formatMoney)
+
+            if game.pendingSupport then
+                Theme:drawTextCenteredWithShadow(
+                    "Select a feature in progress",
+                    game.layout.boardX,
+                    18,
+                    game.layout.boardRight - game.layout.boardX,
+                    Theme.fonts.normal,
+                    { 0.17, 0.75, 0.44, 1 }
+                )
+            end
+
+            if game.techDebt >= 50 then
+                local penalty = "+1 Work on all Features"
+                if game.techDebt >= 100 then
+                    penalty = "+2 Work on all Features"
+                end
+                Theme:drawTextWithShadow(
+                    penalty,
+                    game.layout.boardX,
+                    game.layout.boardTop - 54,
+                    Theme.fonts.small,
+                    Theme.colors.textDanger
+                )
+            end
+        end
+
+        love.graphics.setFont(Theme.fonts.small)
+        HotReload:draw()
+    end)
 end
 
 function love.mousepressed(x, y, button)
     if button ~= 1 then
+        return
+    end
+    if _G.screenToGame then
+        x, y = _G.screenToGame(x, y)
+    end
+    if x == nil or y == nil then
         return
     end
 
@@ -1100,6 +1117,14 @@ function love.mousereleased(x, y, button)
     if button ~= 1 then
         return
     end
+    if _G.screenToGame then
+        x, y = _G.screenToGame(x, y)
+    end
+    if x == nil or y == nil then
+        game.pressedButtonId = nil
+        game.drag = nil
+        return
+    end
 
     if game.phase ~= "sprint" then
         return
@@ -1146,6 +1171,10 @@ function love.mousereleased(x, y, button)
     else
         game.selectedCardId = nil
     end
+end
+
+function love.resize(w, h)
+    Scaling.resize(w, h)
 end
 
 function love.keypressed(key)
