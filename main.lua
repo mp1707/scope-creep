@@ -12,29 +12,29 @@ local RetrospectiveView = require("src.ui.components.retrospective")
 local FEATURE_DEFS = {
     {
         key = "regular_feature",
-        name = "Regular Feature",
+        name = "Dark Mode",
         kind = "feature",
         baseWork = 3,
         baseValue = 1000,
-        color = { 0.92, 0.86, 0.54, 1 },
+        color = { 0.35, 0.39, 0.61, 1 },
         count = 5,
     },
     {
         key = "small_feature",
-        name = "Small Feature",
+        name = "Hotfix",
         kind = "feature",
         baseWork = 1,
         baseValue = 300,
-        color = { 0.95, 0.90, 0.62, 1 },
+        color = { 0.95, 0.58, 0.46, 1 },
         count = 5,
     },
     {
         key = "major_feature",
-        name = "Major Feature",
+        name = "Referral System",
         kind = "feature",
         baseWork = 8,
         baseValue = 3000,
-        color = { 0.90, 0.82, 0.45, 1 },
+        color = { 0.66, 0.87, 0.90, 1 },
         count = 5,
     },
 }
@@ -42,26 +42,26 @@ local FEATURE_DEFS = {
 local SUPPORT_DEFS = {
     {
         key = "quick_and_dirty",
-        name = "Quick and Dirty",
+        name = "Refactor",
         kind = "support",
         effect = "target_minus_work",
         amount = 2,
         techDebtGain = 20,
-        description = "One feature requires -2 Work",
-        header = "+20% Tech Debt",
-        color = { 0.55, 0.77, 0.93, 1 },
+        description = "One feature needs -2 work",
+        header = "+20% bugs",
+        color = { 0.78, 0.66, 0.86, 1 },
         count = 5,
     },
     {
         key = "weekend_session",
-        name = "Weekend Session",
+        name = "Crunch Time",
         kind = "support",
         effect = "all_devs_plus_work",
         amount = 1,
         burnoutGain = 30,
-        description = "All devs get +1 Work today",
-        header = "+30% Burnout",
-        color = { 0.50, 0.72, 0.90, 1 },
+        description = "All devs get +1 work today",
+        header = "+30% burnout",
+        color = { 0.96, 0.68, 0.49, 1 },
         count = 5,
     },
 }
@@ -1007,6 +1007,10 @@ end
 
 function love.draw()
     Scaling.draw(function()
+        Theme:drawBackdrop(game.layout, game.time)
+
+        Theme:drawTextCenteredWithShadow("Scope Creep", 0, 18, game.layout.w, Theme.fonts.display, { 0.95, 0.91, 0.84, 1 })
+
         if game.phase == "sprint" then
             BoardView.draw(Theme, game, game.layout, formatMoney)
             ButtonsView.drawSprint(Theme, game.layout, buttonEnabled, game.pressedButtonId)
@@ -1029,7 +1033,7 @@ function love.draw()
 
             if game.pendingSupport then
                 Theme:drawTextCenteredWithShadow(
-                    "Select a feature in progress",
+                    "Target a feature in progress",
                     game.layout.boardX,
                     18,
                     game.layout.boardRight - game.layout.boardX,
@@ -1039,9 +1043,9 @@ function love.draw()
             end
 
             if game.techDebt >= 50 then
-                local penalty = "+1 Work on all Features"
+                local penalty = "Bugs: +1 work on all features"
                 if game.techDebt >= 100 then
-                    penalty = "+2 Work on all Features"
+                    penalty = "Bugs: +2 work on all features"
                 end
                 Theme:drawTextWithShadow(
                     penalty,

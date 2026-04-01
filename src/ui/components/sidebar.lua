@@ -8,72 +8,147 @@ local function clamp(v, lo, hi)
     return v
 end
 
-local function drawMeterRow(theme, x, y, w, h, label, valueText, valuePercent, fillColor, bgColor)
-    local rowY = Surface.draw({ x = x, y = y, w = w, h = h }, {
-        color = bgColor,
-        shadowOffset = 3,
-    })
+local function drawCenteredLabel(theme, text, x, y, width, font, color)
+    theme:drawTextCenteredWithShadow(text, x, y, width, font, color)
+end
 
-    if valuePercent ~= nil then
-        local fillW = math.floor(w * clamp(valuePercent, 0, 1))
-        if fillW > 0 then
-            local fillRect = {
-                x = x,
-                y = rowY,
-                w = fillW,
-                h = h,
-            }
-            Surface.draw(fillRect, {
-                color = fillColor,
-                shadow = false,
-            })
+local function pickBestGoalValueFont(theme, text, maxWidth, maxHeight)
+    local candidates = {
+        theme.fonts.huge,
+        theme.fonts.display,
+        theme.fonts.large,
+        theme.fonts.normal,
+        theme.fonts.small,
+    }
+
+    for _, font in ipairs(candidates) do
+        if font:getWidth(text) <= maxWidth and font:getHeight() <= maxHeight then
+            return font
         end
     end
+    return theme.fonts.tiny
+end
 
-    theme:drawTextWithShadow(label, x + 16, rowY + h * 0.18, theme.fonts.normal, theme.colors.text)
-    theme:drawTextRightWithShadow(valueText, x, rowY + h * 0.18, w - 14, theme.fonts.normal, theme.colors.text)
+local function drawMeterRow(theme, x, y, w, h, label, valueText, valuePercent, fillColor, bgColor)
+    local rowY = Surface.draw({ x = x, y = y, w = w, h = h }, {
+        color = theme.colors.surface,
+        shadowOffset = 2,
+        radius = 14,
+        borderColor = { 0.18, 0.16, 0.15, 1 },
+        borderWidth = 2,
+    })
+
+    local rowFont = theme.fonts.small
+    if h <= 62 then
+        rowFont = theme.fonts.tiny
+    end
+
+    local textY = rowY + math.max(6, math.floor((h - rowFont:getHeight() - 10) * 0.45))
+    theme:drawTextWithShadow(label, x + 12, textY, rowFont, theme.colors.text)
+    theme:drawTextRightWithShadow(valueText, x, textY, w - 12, rowFont, theme.colors.text)
+
+    if valuePercent ~= nil then
+        local barX = x + 14
+        local barY = rowY + h - 14
+        local barW = w - 28
+        local barH = 8
+
+        love.graphics.setColor(bgColor)
+        love.graphics.rectangle("fill", barX, barY, barW, barH, 4, 4)
+
+        local fillW = math.floor(barW * clamp(valuePercent, 0, 1))
+        if fillW > 0 then
+            love.graphics.setColor(fillColor)
+            love.graphics.rectangle("fill", barX, barY, fillW, barH, 4, 4)
+        end
+
+        love.graphics.setColor(1, 1, 1, 1)
+    end
 end
 
 function Sidebar.draw(theme, game, layout, formatMoney, getDaysRemaining)
     local sb = layout.sidebar.rect
 
     Surface.draw(sb, {
-        color = theme.colors.surface2,
-        shadowOffset = 4,
+        color = theme.colors.boardBackdrop,
+        shadowOffset = 6,
+        radius = 24,
+        borderColor = theme.colors.boardDivider,
+        borderWidth = 2,
     })
 
     local pad = 14
-    local chipH = 64
+    local chipH = 66
     local chipW = math.floor((sb.w - pad * 3) * 0.5)
 
     local chip1Y = Surface.draw({ x = sb.x + pad, y = sb.y + pad, w = chipW, h = chipH }, {
         color = theme.colors.chipA,
-        shadowOffset = 3,
+        shadowOffset = 2,
+        radius = 14,
     })
-    theme:drawTextCenteredWithShadow("Release " .. tostring(game.release), sb.x + pad, chip1Y + 18, chipW, theme.fonts.normal, theme.colors.text)
+    drawCenteredLabel(theme, "Release " .. tostring(game.release), sb.x + pad, chip1Y + 16, chipW, theme.fonts.small, theme.colors.text)
 
     local chip2X = sb.x + pad * 2 + chipW
     local chip2Y = Surface.draw({ x = chip2X, y = sb.y + pad, w = chipW, h = chipH }, {
         color = theme.colors.chipB,
-        shadowOffset = 3,
+        shadowOffset = 2,
+        radius = 14,
     })
-    theme:drawTextCenteredWithShadow("Sprint " .. tostring(game.sprint), chip2X, chip2Y + 18, chipW, theme.fonts.normal, theme.colors.text)
+    drawCenteredLabel(theme, "Sprint " .. tostring(game.sprint), chip2X, chip2Y + 16, chipW, theme.fonts.small, theme.colors.text)
 
     local goalY = sb.y + pad + chipH + 12
-    local goalH = 208
+    local rowCount = game.phase == "sprint" and 4 or 2
+    local rowH = 68
+    local rowGap = 10
+    local buttonH = 58
+    local staticH = chipH + 12 + (rowCount * rowH + (rowCount - 1) * rowGap) + 12 + buttonH
+    local availableForGoal = sb.h - pad * 2 - staticH
+    local goalH = math.max(128, math.min(220, availableForGoal))
+
+    if goalH <= 170 then
+        rowH = 62
+        staticH = chipH + 12 + (rowCount * rowH + (rowCount - 1) * rowGap) + 12 + buttonH
+        availableForGoal = sb.h - pad * 2 - staticH
+        goalH = math.max(120, math.min(200, availableForGoal))
+    end
+
+    if goalH <= 130 then
+        rowH = 56
+        staticH = chipH + 12 + (rowCount * rowH + (rowCount - 1) * rowGap) + 12 + buttonH
+        availableForGoal = sb.h - pad * 2 - staticH
+        goalH = math.max(108, math.min(180, availableForGoal))
+    end
 
     local goalDrawY = Surface.draw({ x = sb.x + pad, y = goalY, w = sb.w - pad * 2, h = goalH }, {
         color = theme.colors.goalSurface,
-        shadowOffset = 4,
+        shadowOffset = 3,
+        radius = 18,
     })
 
-    local goalTextColor = { 0.13, 0.11, 0.19, 1 }
-    theme:drawTextCenteredWithShadow("Business Goal", sb.x + pad, goalDrawY + 26, sb.w - pad * 2, theme.fonts.large, goalTextColor)
-    theme:drawTextCenteredWithShadow(formatMoney(game.businessGoal), sb.x + pad, goalDrawY + 88, sb.w - pad * 2, theme.fonts.giant, goalTextColor)
-    theme:drawTextCenteredWithShadow("Revenue", sb.x + pad, goalDrawY + 156, sb.w - pad * 2, theme.fonts.large, goalTextColor)
+    local goalTextColor = { 0.15, 0.12, 0.10, 1 }
+    local goalTitleFont = goalH <= 178 and theme.fonts.normal or theme.fonts.large
+    local goalSubFont = goalH <= 178 and theme.fonts.small or theme.fonts.normal
+
+    local goalW = sb.w - pad * 2
+    local moneyText = formatMoney(game.businessGoal)
+    local innerPadTop = math.max(10, math.floor(goalH * 0.08))
+    local innerPadBottom = math.max(10, math.floor(goalH * 0.08))
+    local sectionGap = math.max(8, math.floor(goalH * 0.06))
+
+    local titleY = goalDrawY + innerPadTop
+    local subY = goalDrawY + goalH - innerPadBottom - goalSubFont:getHeight()
+    local valueTop = titleY + goalTitleFont:getHeight() + sectionGap
+    local valueBottom = subY - sectionGap
+    local valueH = math.max(18, valueBottom - valueTop)
+
+    local goalValueFont = pickBestGoalValueFont(theme, moneyText, goalW - 24, valueH)
+    local valueY = valueTop + math.floor((valueH - goalValueFont:getHeight()) * 0.5)
+
+    drawCenteredLabel(theme, "Sprint Goal", sb.x + pad, titleY, goalW, goalTitleFont, goalTextColor)
+    theme:drawTextCenteredWithShadow(moneyText, sb.x + pad, valueY, goalW, goalValueFont, goalTextColor)
+    drawCenteredLabel(theme, "Revenue target", sb.x + pad, subY, goalW, goalSubFont, goalTextColor)
 
     local rowY = goalY + goalH + 12
-    local rowH = 64
 
     drawMeterRow(theme, sb.x + pad, rowY, sb.w - pad * 2, rowH, "Revenue", formatMoney(game.revenue), game.revenue / game.businessGoal, theme.colors.meterRevenueFill, theme.colors.meterRevenueBg)
     rowY = rowY + rowH + 10
@@ -86,25 +161,26 @@ function Sidebar.draw(theme, game, layout, formatMoney, getDaysRemaining)
         rowY = rowY + rowH + 10
     end
 
-    drawMeterRow(theme, sb.x + pad, rowY, sb.w - pad * 2, rowH, "Days", tostring(getDaysRemaining()), nil, theme.colors.meterDaysFill, theme.colors.meterDaysFill)
+    drawMeterRow(theme, sb.x + pad, rowY, sb.w - pad * 2, rowH, "Days Left", tostring(getDaysRemaining()), nil, theme.colors.meterDaysFill, theme.colors.meterRevenueBg)
     rowY = rowY + rowH + 12
 
     local mockButtonW = math.floor((sb.w - pad * 3) * 0.5)
     local mockButtonH = 58
 
     local settingsY = Surface.draw({ x = sb.x + pad, y = rowY, w = mockButtonW, h = mockButtonH }, {
-        color = theme.colors.surfaceMuted,
-        shadowOffset = 3,
+        color = theme.colors.surface,
+        shadowOffset = 2,
+        radius = 12,
     })
     local infoX = sb.x + pad * 2 + mockButtonW
     local infoY = Surface.draw({ x = infoX, y = rowY, w = mockButtonW, h = mockButtonH }, {
-        color = theme.colors.surfaceMuted,
-        shadowOffset = 3,
+        color = theme.colors.surface,
+        shadowOffset = 2,
+        radius = 12,
     })
 
-    local labelY = settingsY + (mockButtonH - theme.fonts.small:getHeight()) * 0.5
-    theme:drawTextCenteredWithShadow("Settings", sb.x + pad, labelY, mockButtonW, theme.fonts.small, theme.colors.text)
-    theme:drawTextCenteredWithShadow("Info", infoX, infoY + (mockButtonH - theme.fonts.small:getHeight()) * 0.5, mockButtonW, theme.fonts.small, theme.colors.text)
+    drawCenteredLabel(theme, "Settings", sb.x + pad, settingsY + (mockButtonH - theme.fonts.small:getHeight()) * 0.5, mockButtonW, theme.fonts.small, theme.colors.text)
+    drawCenteredLabel(theme, "Info", infoX, infoY + (mockButtonH - theme.fonts.small:getHeight()) * 0.5, mockButtonW, theme.fonts.small, theme.colors.text)
 
     local backlog = layout.sidebar.backlogRect
     local stackOffset = 6
@@ -117,16 +193,18 @@ function Sidebar.draw(theme, game, layout, formatMoney, getDaysRemaining)
         }, {
             color = theme.colors.surfaceMuted,
             shadow = false,
+            radius = 10,
         })
     end
 
     local backlogY = Surface.draw(backlog, {
         color = theme.colors.surface,
         shadowOffset = 3,
+        radius = 10,
     })
 
-    theme:drawTextCenteredWithShadow(tostring(#game.deck), backlog.x, backlogY + backlog.h * 0.35, backlog.w, theme.fonts.giant, theme.colors.text)
-    theme:drawTextCenteredWithShadow("Backlog", backlog.x, backlog.y - 78, backlog.w, theme.fonts.normal, theme.colors.text)
+    theme:drawTextCenteredWithShadow(tostring(#game.deck), backlog.x, backlogY + backlog.h * 0.48, backlog.w, theme.fonts.display, theme.colors.text)
+    theme:drawTextCenteredWithShadow("Backlog", backlog.x, backlog.y - 76, backlog.w, theme.fonts.normal, theme.colors.text)
 end
 
 return Sidebar

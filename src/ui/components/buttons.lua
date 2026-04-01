@@ -32,10 +32,11 @@ function Buttons.drawButton(theme, rect, label, enabled, color, isPressed)
         color = base,
         shadowOffset = 4,
         pressed = isPressed and enabled,
+        radius = 16,
     })
 
-    local textY = y + (rect.h - theme.fonts.large:getHeight()) * 0.5
-    theme:drawTextCenteredWithShadow(label, rect.x, textY, rect.w, theme.fonts.large, theme.colors.text)
+    local textY = y + (rect.h - theme.fonts.normal:getHeight()) * 0.5
+    theme:drawTextCenteredWithShadow(label, rect.x, textY, rect.w, theme.fonts.normal, theme.colors.text)
 end
 
 function Buttons.drawSprint(theme, layout, buttonEnabled, pressedButtonId)

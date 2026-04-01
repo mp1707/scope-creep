@@ -15,10 +15,10 @@ function Layout.compute(state)
     local mainLeft = math.floor(28 * scale)
     local mainRight = sidebarX - math.floor(20 * scale)
     local mainW = mainRight - mainLeft
-    local boardTop = math.floor(80 * scale)
+    local boardTop = math.floor(128 * scale)
 
-    local handCardH = math.floor(210 * scale)
-    local boardBottom = h - handCardH - math.floor(110 * scale)
+    local provisionalHandH = math.floor(190 * scale)
+    local boardBottom = h - provisionalHandH - math.floor(108 * scale)
     if boardBottom < boardTop + math.floor(220 * scale) then
         boardBottom = boardTop + math.floor(220 * scale)
     end
@@ -26,21 +26,27 @@ function Layout.compute(state)
     local boardH = boardBottom - boardTop
 
     local rowCount = math.max(1, #state.rows)
-    local rowGap = math.floor(16 * scale)
+    local rowGap = math.floor(14 * scale)
     local rowAvailable = boardH - rowGap * (rowCount - 1)
     local maxRowH = rowAvailable / rowCount
 
-    local devW = math.floor(math.min(140 * scale, maxRowH * 0.92))
-    local devH = devW
+    local colGap = math.floor(18 * scale)
+    local slotH = math.floor(math.min(210 * scale, maxRowH * 0.96))
+    slotH = math.max(118, slotH)
+    local slotW = math.floor(slotH / 1.35)
+    slotW = math.max(88, slotW)
 
-    local devGap = math.floor(24 * scale)
-    local colGap = math.floor(20 * scale)
+    local devW = math.floor(slotW * 0.9)
+    local devH = slotH
+    local devGap = math.floor(20 * scale)
 
-    local slotH = math.floor(math.min(210 * scale, maxRowH * 0.94))
-    local slotWByHeight = math.floor(slotH * 0.78)
     local slotWByWidth = math.floor((mainW - devW - devGap - colGap * 3) / 4)
-    local slotW = math.max(86, math.min(slotWByHeight, slotWByWidth))
-    slotH = math.floor(math.max(100, math.min(slotH, slotW * 1.35)))
+    if slotW > slotWByWidth then
+        slotW = math.max(84, slotWByWidth)
+        slotH = math.floor(slotW * 1.35)
+        devW = math.floor(slotW * 0.9)
+        devH = slotH
+    end
 
     local pipelineW = slotW * 4 + colGap * 3
     local totalBoardW = devW + devGap + pipelineW
@@ -51,7 +57,7 @@ function Layout.compute(state)
     local pipelineX = boardX + devW + devGap
     local boardRight = boardX + totalBoardW
 
-    local rowH = math.max(devH, slotH)
+    local rowH = slotH
     local totalRowsH = rowCount * rowH + (rowCount - 1) * rowGap
     local rowsStartY = boardTop + math.floor((boardH - totalRowsH) * 0.5)
 
@@ -83,7 +89,7 @@ function Layout.compute(state)
     local buttonW = math.floor(220 * scale)
     local buttonH = math.floor(74 * scale)
     local buttonX = sidebarX - buttonW - math.floor(24 * scale)
-    local buttonPlayY = h - handCardH - math.floor(100 * scale)
+    local buttonPlayY = h - slotH - math.floor(102 * scale)
     local buttonEndY = buttonPlayY + buttonH + math.floor(18 * scale)
 
     local handLeft = boardX + math.floor(28 * scale)
@@ -92,8 +98,8 @@ function Layout.compute(state)
         handRight = boardRight - math.floor(18 * scale)
     end
 
-    local handCardW = math.floor(math.min(180 * scale, (handRight - handLeft) / 4.4))
-    handCardH = math.floor(handCardW * 1.35)
+    local handCardW = slotW
+    local handCardH = slotH
 
     local handY = h - handCardH - math.floor(26 * scale)
 

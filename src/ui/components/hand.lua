@@ -1,19 +1,7 @@
-local Surface = require("src.ui.components.surface")
 local CardTransformRenderer = require("src.ui.card_transform_renderer")
+local CardFace = require("src.ui.components.card_face")
 
 local Hand = {}
-
-local function drawSupportCardText(theme, card, x, y, w, h)
-    if card.header then
-        theme:drawTextWrappedWithShadow(card.header, x + 8, y + 8, w - 16, "left", theme.fonts.tiny, theme.colors.text)
-    end
-
-    theme:drawTextWrappedWithShadow(card.name, x + 10, y + h * 0.38, w - 20, "center", theme.fonts.small, theme.colors.text)
-
-    local desc = card.description or ""
-    local textY = y + h - 56
-    theme:drawTextWrappedWithShadow(desc, x + 10, textY, w - 20, "center", theme.fonts.tiny, theme.colors.text)
-end
 
 local function drawCard(theme, game, layout, card, index, getTechDebtWorkPenalty, formatMoney)
     local hand = layout.hand
@@ -36,24 +24,32 @@ local function drawCard(theme, game, layout, card, index, getTechDebtWorkPenalty
         shearX = card.tiltX,
         padding = 8,
         drawFn = function(x, y, drawW, drawH, _)
-            local cardY = Surface.draw({ x = x, y = y, w = drawW, h = drawH }, {
-                color = card.color,
-                shadowOffset = 4,
-            })
-
+            local rect = { x = x, y = y, w = drawW, h = drawH }
             if card.kind == "feature" then
-                local workText = tostring(card.baseWork + getTechDebtWorkPenalty()) .. " Work"
-                theme:drawTextWrappedWithShadow(workText, x + 10, cardY + 8, drawW - 20, "left", theme.fonts.tiny, theme.colors.text)
-                theme:drawTextWrappedWithShadow(card.name, x + 10, cardY + drawH * 0.42, drawW - 20, "center", theme.fonts.small, theme.colors.text)
-                theme:drawTextWrappedWithShadow(formatMoney(card.baseValue), x + 10, cardY + drawH - 42, drawW - 20, "center", theme.fonts.small, theme.colors.text)
+                CardFace.drawFeature(theme, card, rect, {
+                    mode = "hand",
+                    shadowOffset = 4,
+                    getTechDebtWorkPenalty = getTechDebtWorkPenalty,
+                    formatMoney = formatMoney,
+                })
             else
-                drawSupportCardText(theme, card, x, cardY, drawW, drawH)
+                CardFace.drawSupport(theme, card, rect, {
+                    shadowOffset = 4,
+                })
+            end
+
+            if game.selectedCardId == card.id then
+                love.graphics.setColor(theme.colors.cardSelected)
+                love.graphics.setLineWidth(4)
+                love.graphics.rectangle("line", x - 2, y - 2, drawW + 4, drawH + 4, 14, 14)
+                love.graphics.setLineWidth(1)
+                love.graphics.setColor(1, 1, 1, 1)
             end
         end,
     })
 
     if game.pendingSupport and game.pendingSupport.cardId == card.id then
-        theme:drawTextCenteredWithShadow("Select a feature", card.x, card.y + breathingY - 20, w, theme.fonts.small, { 0.15, 0.58, 0.35, 1 })
+        theme:drawTextCenteredWithShadow("Select a feature", card.x, card.y + breathingY - 30, w, theme.fonts.tiny, theme.colors.cardTarget)
     end
 end
 
