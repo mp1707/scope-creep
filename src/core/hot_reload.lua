@@ -136,21 +136,13 @@ function HotReload:draw()
     end
 
     local color = { 0.22, 0.78, 0.47, math.max(0, alpha) }
-    local theme = package.loaded["src.ui.theme"]
     local drawHeight = love.graphics.getHeight()
-    if theme and theme.screen and theme.screen.height then
-        drawHeight = theme.screen.height
-    end
 
-    if theme and theme.fonts and theme.fonts.small and theme.drawTextWithShadow then
-        theme:drawTextWithShadow(self.reloadMessage, 16, drawHeight - 36, theme.fonts.small, color)
-    else
-        love.graphics.setColor(0, 0, 0, 0.38 * color[4])
-        love.graphics.print(self.reloadMessage, 18, drawHeight - 34)
-        love.graphics.setColor(color)
-        love.graphics.print(self.reloadMessage, 16, drawHeight - 36)
-        love.graphics.setColor(1, 1, 1, 1)
-    end
+    love.graphics.setColor(0, 0, 0, 0.38 * color[4])
+    love.graphics.print(self.reloadMessage, 18, drawHeight - 34)
+    love.graphics.setColor(color)
+    love.graphics.print(self.reloadMessage, 16, drawHeight - 36)
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 HotReload.fileModTimes = snapshotFileTimes()

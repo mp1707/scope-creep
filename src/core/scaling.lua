@@ -1,17 +1,19 @@
-local Theme = require("src.ui.theme")
-
 local Scaling = {
     canvas = nil,
     scale = 1,
     offsetX = 0,
     offsetY = 0,
+    baseWidth = 1920,
+    baseHeight = 1080,
+    clearColor = { 1, 1, 1, 1 },
+    barColor = { 1, 1, 1, 1 },
     initialized = false,
 }
 
 function Scaling.calculateScale()
     local windowWidth, windowHeight = love.graphics.getDimensions()
-    local baseWidth = Theme.screen.width
-    local baseHeight = Theme.screen.height
+    local baseWidth = Scaling.baseWidth
+    local baseHeight = Scaling.baseHeight
 
     local scaleX = windowWidth / baseWidth
     local scaleY = windowHeight / baseHeight
@@ -35,8 +37,8 @@ function Scaling.screenToGame(screenX, screenY)
     local gameX = ((screenX or 0) - Scaling.offsetX) / Scaling.scale
     local gameY = ((screenY or 0) - Scaling.offsetY) / Scaling.scale
 
-    local baseWidth = Theme.screen.width
-    local baseHeight = Theme.screen.height
+    local baseWidth = Scaling.baseWidth
+    local baseHeight = Scaling.baseHeight
     if gameX < 0 or gameX >= baseWidth or gameY < 0 or gameY >= baseHeight then
         return nil, nil
     end
@@ -44,8 +46,25 @@ function Scaling.screenToGame(screenX, screenY)
     return gameX, gameY
 end
 
-function Scaling.init()
-    Scaling.canvas = love.graphics.newCanvas(Theme.screen.width, Theme.screen.height)
+function Scaling.init(config)
+    if config then
+        if config.width then
+            Scaling.baseWidth = config.width
+        end
+        if config.height then
+            Scaling.baseHeight = config.height
+        end
+        if config.clearColor then
+            Scaling.clearColor = config.clearColor
+        end
+        if config.barColor then
+            Scaling.barColor = config.barColor
+        else
+            Scaling.barColor = Scaling.clearColor
+        end
+    end
+
+    Scaling.canvas = love.graphics.newCanvas(Scaling.baseWidth, Scaling.baseHeight)
     -- Keep pixel text/shadows crisp under scaling.
     Scaling.canvas:setFilter("nearest", "nearest")
 
@@ -61,7 +80,7 @@ end
 
 function Scaling.draw(drawCallback)
     love.graphics.setCanvas(Scaling.canvas)
-    love.graphics.clear(Theme.colors.bg)
+    love.graphics.clear(Scaling.clearColor)
 
     if drawCallback then
         drawCallback()
@@ -72,7 +91,7 @@ function Scaling.draw(drawCallback)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(Scaling.canvas, Scaling.offsetX, Scaling.offsetY, 0, Scaling.scale, Scaling.scale)
 
-    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.setColor(Scaling.barColor)
     if Scaling.offsetX > 0 then
         love.graphics.rectangle("fill", 0, 0, Scaling.offsetX, love.graphics.getHeight())
         love.graphics.rectangle("fill", love.graphics.getWidth() - Scaling.offsetX, 0, Scaling.offsetX, love.graphics.getHeight())
