@@ -1,14 +1,11 @@
-local HotReload = require("src.core.hot_reload")
-local Scaling   = require("src.core.scaling")
-local Theme     = require("src.ui.theme")
-local Board     = require("src.ui.board")
+local HotReload  = require("src.core.hot_reload")
+local Scaling    = require("src.core.scaling")
+local Theme      = require("src.ui.theme")
+local Board      = require("src.ui.board")
+local InfoPanel  = require("src.ui.info_panel")
 
-local APP_WIDTH  = 1920
-local APP_HEIGHT = 1080
-local ASPECT     = APP_WIDTH / APP_HEIGHT  -- 16/9
-
-local pendingResize   = nil
-local enforcingResize = false
+local APP_WIDTH   = 1920
+local APP_HEIGHT  = 1080
 
 local state = {
     time = 0,
@@ -59,9 +56,11 @@ function love.load(isReload)
         width      = APP_WIDTH,
         height     = APP_HEIGHT,
         clearColor = Theme.colors.background,
+        barColor   = { 0, 0, 0, 1 },
     })
 
     Theme.load()
+    InfoPanel.load()
 
     if not isReload then
         state.time = 0
@@ -71,33 +70,21 @@ function love.load(isReload)
 end
 
 function love.update(dt)
-    if pendingResize then
-        local pw, ph = pendingResize[1], pendingResize[2]
-        pendingResize = nil
-        enforcingResize = true
-        love.window.updateMode(pw, ph)
-        Scaling.resize(pw, ph)
-        enforcingResize = false
-    end
-
     state.time = state.time + dt
+    InfoPanel.update()
     HotReload:update(dt)
 end
 
 function love.draw()
     Scaling.draw(function()
         Board.draw()
+        InfoPanel.draw()
         HotReload:draw()
     end)
 end
 
 function love.resize(w, h)
     Scaling.resize(w, h)
-    if enforcingResize then return end
-    local targetH = math.floor(w / ASPECT + 0.5)
-    if targetH ~= h then
-        pendingResize = { w, targetH }
-    end
 end
 
 function love.keypressed(key)

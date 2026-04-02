@@ -6,7 +6,7 @@ local Scaling = {
     baseWidth = 1920,
     baseHeight = 1080,
     clearColor = { 1, 1, 1, 1 },
-    barColor = { 1, 1, 1, 1 },
+    barColor = { 0, 0, 0, 1 },
     initialized = false,
 }
 
@@ -60,7 +60,7 @@ function Scaling.init(config)
         if config.barColor then
             Scaling.barColor = config.barColor
         else
-            Scaling.barColor = Scaling.clearColor
+            Scaling.barColor = { 0, 0, 0, 1 }
         end
     end
 
