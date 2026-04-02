@@ -65,8 +65,7 @@ function Scaling.init(config)
     end
 
     Scaling.canvas = love.graphics.newCanvas(Scaling.baseWidth, Scaling.baseHeight)
-    -- Keep pixel text/shadows crisp under scaling.
-    Scaling.canvas:setFilter("nearest", "nearest")
+    Scaling.canvas:setFilter("linear", "linear")
 
     Scaling.calculateScale()
     Scaling.initialized = true
