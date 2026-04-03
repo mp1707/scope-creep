@@ -81,7 +81,7 @@ function love.load(isReload)
         barColor   = { 0, 0, 0, 1 },
     })
 
-    Theme.load()
+    Theme.load(Scaling.getScale())
 
     if not isReload then
         state.time = 0
@@ -135,12 +135,13 @@ function love.draw()
         end
 
         love.graphics.setFont(Theme.fonts.default)
-        HotReload:draw()
+        HotReload:draw(APP_HEIGHT, Scaling.getScale())
     end)
 end
 
 function love.resize(w, h)
     Scaling.resize(w, h)
+    Theme.load(Scaling.getScale())
 end
 
 function love.keypressed(key)

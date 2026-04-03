@@ -119,7 +119,7 @@ function HotReload:update(dt)
     end
 end
 
-function HotReload:draw()
+function HotReload:draw(drawHeight, viewportScale)
     if not self.reloadMessage then
         return
     end
@@ -136,12 +136,16 @@ function HotReload:draw()
     end
 
     local color = { 0.22, 0.78, 0.47, math.max(0, alpha) }
-    local drawHeight = love.graphics.getHeight()
+    local height = drawHeight or love.graphics.getHeight()
+    local scale = tonumber(viewportScale) or 1
+    if scale <= 0 then
+        scale = 1
+    end
 
     love.graphics.setColor(0, 0, 0, 0.38 * color[4])
-    love.graphics.print(self.reloadMessage, 18, drawHeight - 34)
+    love.graphics.print(self.reloadMessage, 18, height - 34, 0, 1 / scale, 1 / scale)
     love.graphics.setColor(color)
-    love.graphics.print(self.reloadMessage, 16, drawHeight - 36)
+    love.graphics.print(self.reloadMessage, 16, height - 36, 0, 1 / scale, 1 / scale)
     love.graphics.setColor(1, 1, 1, 1)
 end
 

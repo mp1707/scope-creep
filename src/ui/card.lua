@@ -1,3 +1,5 @@
+local Scaling = require("src.core.scaling")
+
 local Card = {}
 Card.__index = Card
 
@@ -140,10 +142,25 @@ function Card:draw(font)
         love.graphics.setFont(font)
     end
 
+    local viewportScale = Scaling.getScale()
+    if viewportScale <= 0 then
+        viewportScale = 1
+    end
+
     local headerHeight = 34
     local fontHeight = love.graphics.getFont():getHeight()
-    local titleY = self.y + (headerHeight - fontHeight) * 0.5
-    love.graphics.printf(self.name, self.x + 12, titleY, self.width - 24, "center")
+    local effectiveFontHeight = fontHeight / viewportScale
+    local titleY = self.y + (headerHeight - effectiveFontHeight) * 0.5
+    love.graphics.printf(
+        self.name,
+        self.x + 12,
+        titleY,
+        (self.width - 24) * viewportScale,
+        "center",
+        0,
+        1 / viewportScale,
+        1 / viewportScale
+    )
     love.graphics.setLineWidth(2)
     love.graphics.line(self.x, self.y + headerHeight, self.x + self.width, self.y + headerHeight)
 
