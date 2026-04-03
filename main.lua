@@ -1,8 +1,6 @@
 local HotReload  = require("src.core.hot_reload")
 local Scaling    = require("src.core.scaling")
 local Theme      = require("src.ui.theme")
-local Board      = require("src.ui.board")
-local InfoPanel  = require("src.ui.info_panel")
 
 local APP_WIDTH   = 1920
 local APP_HEIGHT  = 1080
@@ -60,7 +58,6 @@ function love.load(isReload)
     })
 
     Theme.load()
-    InfoPanel.load()
 
     if not isReload then
         state.time = 0
@@ -71,14 +68,21 @@ end
 
 function love.update(dt)
     state.time = state.time + dt
-    InfoPanel.update()
     HotReload:update(dt)
 end
 
 function love.draw()
     Scaling.draw(function()
-        Board.draw()
-        InfoPanel.draw()
+        local text = "scope creep"
+        local font = Theme.fonts.title
+        local textX = math.floor((APP_WIDTH - font:getWidth(text)) * 0.5)
+        local textY = math.floor((APP_HEIGHT - font:getHeight()) * 0.5)
+
+        love.graphics.setColor(Theme.colors.text)
+        love.graphics.setFont(font)
+        love.graphics.print(text, textX, textY)
+
+        love.graphics.setFont(Theme.fonts.default)
         HotReload:draw()
     end)
 end
