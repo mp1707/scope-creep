@@ -2,6 +2,7 @@ local Scaling = require("src.core.scaling")
 
 local Card = {}
 Card.__index = Card
+Card.HEADER_HEIGHT = 34
 
 local function damp(current, target, speed, dt)
     local t = 1 - math.exp(-speed * dt)
@@ -16,6 +17,7 @@ function Card.new(config)
     local self = setmetatable({}, Card)
 
     self.name = config.name or "Card"
+    self.capacity = config.capacity
     self.width = config.width or 160
     self.height = config.height or math.floor(self.width * (7 / 5))
 
@@ -63,8 +65,23 @@ function Card:containsPoint(px, py)
         and py >= centerY - halfH and py <= centerY + halfH
 end
 
-function Card:beginDrag(px, py)
-    if not self:containsPoint(px, py) then
+function Card:containsHeaderPoint(px, py)
+    local centerX = self.x + self.width * 0.5
+    local centerY = self.y + self.height * 0.5
+    local halfW = self.width * self.scale * 0.5
+    local halfH = self.height * self.scale * 0.5
+
+    local left = centerX - halfW
+    local right = centerX + halfW
+    local top = centerY - halfH
+    local headerBottom = top + Card.HEADER_HEIGHT * self.scale
+
+    return px >= left and px <= right
+        and py >= top and py <= headerBottom
+end
+
+function Card:beginDrag(px, py, force)
+    if not force and not self:containsPoint(px, py) then
         return false
     end
 
@@ -117,7 +134,37 @@ function Card:getSnapshot()
     }
 end
 
-function Card:draw(font)
+function Card:drawCapacityBadge(viewportScale)
+    if self.capacity == nil then
+        return
+    end
+
+    local badgeRadius = 18
+    local badgeInset = 4
+    local badgeX = self.x + badgeInset + badgeRadius
+    local badgeY = self.y + self.height - badgeInset - badgeRadius
+
+    love.graphics.setColor(0.75, 0.75, 0.75, 1)
+    love.graphics.circle("fill", badgeX, badgeY, badgeRadius)
+    love.graphics.setColor(0, 0, 0, 1)
+
+    local capacityText = tostring(self.capacity)
+    local font = love.graphics.getFont()
+    local textWidth = font:getWidth(capacityText) / viewportScale
+    local textHeight = font:getHeight() / viewportScale
+    love.graphics.print(
+        capacityText,
+        badgeX - textWidth * 0.5,
+        badgeY - textHeight * 0.54,
+        0,
+        1 / viewportScale,
+        1 / viewportScale
+    )
+end
+
+function Card:draw(font, options)
+    options = options or {}
+
     local centerX = self.x + self.width * 0.5
     local centerY = self.y + self.height * 0.5
 
@@ -126,14 +173,16 @@ function Card:draw(font)
     love.graphics.scale(self.scale, self.scale)
     love.graphics.translate(-centerX, -centerY)
 
-    love.graphics.setColor(0, 0, 0, self.shadowAlpha)
-    love.graphics.rectangle(
-        "fill",
-        self.x - self.shadowExpand * 0.5 + self.shadowOffsetX,
-        self.y - self.shadowExpand * 0.5 + self.shadowOffsetY,
-        self.width + self.shadowExpand,
-        self.height + self.shadowExpand
-    )
+    if not options.skipShadow then
+        love.graphics.setColor(0, 0, 0, self.shadowAlpha)
+        love.graphics.rectangle(
+            "fill",
+            self.x - self.shadowExpand * 0.5 + self.shadowOffsetX,
+            self.y - self.shadowExpand * 0.5 + self.shadowOffsetY,
+            self.width + self.shadowExpand,
+            self.height + self.shadowExpand
+        )
+    end
 
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.rectangle("fill", self.x, self.y, self.width, self.height)
@@ -151,7 +200,7 @@ function Card:draw(font)
         viewportScale = 1
     end
 
-    local headerHeight = 34
+    local headerHeight = Card.HEADER_HEIGHT
     local fontHeight = love.graphics.getFont():getHeight()
     local effectiveFontHeight = fontHeight / viewportScale
     local titleY = self.y + (headerHeight - effectiveFontHeight) * 0.5
@@ -167,6 +216,7 @@ function Card:draw(font)
     )
     love.graphics.setLineWidth(2)
     love.graphics.line(self.x, self.y + headerHeight, self.x + self.width, self.y + headerHeight)
+    self:drawCapacityBadge(viewportScale)
 
     love.graphics.pop()
     love.graphics.setLineWidth(1)
