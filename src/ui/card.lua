@@ -88,6 +88,10 @@ function Card:endDrag()
     self.targetShadowExpand = 0
 end
 
+function Card:isDragging()
+    return self.dragging
+end
+
 function Card:update(dt, pointerX, pointerY)
     if self.dragging and pointerX and pointerY then
         self.targetX = clamp(pointerX - self.dragOffsetX, 0, self.worldWidth - self.width)

@@ -160,18 +160,15 @@ function love.mousepressed(x, y, button)
         return
     end
 
+    if steveCard:isDragging() then
+        steveCard:endDrag()
+        return
+    end
+
     local gameX, gameY = screenToGame(x, y)
     if not gameX or not gameY then
         return
     end
 
     steveCard:beginDrag(gameX, gameY)
-end
-
-function love.mousereleased(_, _, button)
-    if button ~= 1 or not steveCard then
-        return
-    end
-
-    steveCard:endDrag()
 end
