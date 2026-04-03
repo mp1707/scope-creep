@@ -464,8 +464,8 @@ local function createDefaultCards()
     local quickWinCard = createCard({
         cardType = "feature",
         title = "Quick Win",
-        costTotal = 4,
-        costRemaining = 4,
+        costTotal = 2,
+        costRemaining = 2,
         value = 1,
         x = quickWinX,
         y = quickWinY,
