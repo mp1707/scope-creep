@@ -12,6 +12,8 @@ local FONT_DEFS = {
     default = { path = "assets/fonts/PatrickHand-Regular.ttf", size = 32 },
     title = { path = "assets/fonts/PatrickHand-Regular.ttf", size = 96 },
     cardHeader = { path = "assets/fonts/PatrickHand-Regular.ttf", size = 20 },
+    cardBody = { path = "assets/fonts/PatrickHand-Regular.ttf", size = 16 },
+    uiButton = { path = "assets/fonts/PatrickHand-Regular.ttf", size = 22 },
 }
 
 local function quantizeScale(value)
