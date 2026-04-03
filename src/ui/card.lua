@@ -32,6 +32,14 @@ local DEFAULT_STYLES = {
         indicatorFill = { 0.82, 0.86, 0.82, 1 },
         indicatorEmpty = { 0.82, 0.86, 0.82, 1 },
     },
+    opportunity = {
+        bodyColor = { 1, 1, 1, 1 },
+        headerColor = { 1, 1, 1, 1 },
+        borderColor = { 0, 0, 0, 1 },
+        textColor = { 0, 0, 0, 1 },
+        indicatorFill = { 0.82, 0.86, 0.82, 1 },
+        indicatorEmpty = { 0.82, 0.86, 0.82, 1 },
+    },
     default = {
         bodyColor = { 1, 1, 1, 1 },
         headerColor = { 1, 1, 1, 1 },
@@ -53,6 +61,23 @@ end
 
 local function applyAlpha(color, alphaMultiplier)
     return color[1], color[2], color[3], (color[4] or 1) * alphaMultiplier
+end
+
+local function drawEnvelopeOutline(x, y, width, height)
+    local pad = 8
+    local left = x + pad
+    local right = x + width - pad
+    local top = y + pad
+    local bottom = y + height - pad
+    local centerX = x + width * 0.5
+    local foldY = y + height * 0.58
+
+    love.graphics.setLineWidth(5)
+    love.graphics.rectangle("line", left, top, right - left, bottom - top, 8, 8)
+    love.graphics.line(left + 4, top + 4, centerX, foldY)
+    love.graphics.line(right - 4, top + 4, centerX, foldY)
+    love.graphics.line(left + 4, bottom - 4, centerX, foldY)
+    love.graphics.line(right - 4, bottom - 4, centerX, foldY)
 end
 
 function Card.new(config)
@@ -251,6 +276,30 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont)
         return
     end
 
+    if self.cardType == "opportunity" then
+        if bodyFont then
+            love.graphics.setFont(bodyFont)
+        end
+
+        love.graphics.printf(
+            "\"high-value\nopportunities\"",
+            self.x + 10,
+            self.y + 20,
+            (self.width - 20) * viewportScale,
+            "center",
+            0,
+            1 / viewportScale,
+            1 / viewportScale
+        )
+
+        local iconWidth = self.width - 24
+        local iconHeight = self.height * 0.4
+        local iconX = self.x + 12
+        local iconY = self.y + self.height - iconHeight - 18
+        drawEnvelopeOutline(iconX, iconY, iconWidth, iconHeight)
+        return
+    end
+
     if self.cardType == "feature" then
         if valueFont then
             love.graphics.setFont(valueFont)
@@ -381,9 +430,12 @@ function Card:draw(headerFont, options)
     love.graphics.setColor(applyAlpha(bodyColor, alpha))
     love.graphics.rectangle("fill", self.x, self.y, self.width, self.height)
 
-    local headerHeight = Card.HEADER_HEIGHT
-    love.graphics.setColor(applyAlpha(headerColor, alpha))
-    love.graphics.rectangle("fill", self.x, self.y, self.width, headerHeight)
+    local showHeader = self.cardType ~= "opportunity"
+    local headerHeight = showHeader and Card.HEADER_HEIGHT or 0
+    if showHeader then
+        love.graphics.setColor(applyAlpha(headerColor, alpha))
+        love.graphics.rectangle("fill", self.x, self.y, self.width, headerHeight)
+    end
 
     love.graphics.setColor(applyAlpha(borderColor, alpha))
     love.graphics.setLineWidth(3)
@@ -398,23 +450,25 @@ function Card:draw(headerFont, options)
         viewportScale = 1
     end
 
-    local fontHeight = love.graphics.getFont():getHeight()
-    local effectiveFontHeight = fontHeight / viewportScale
-    local titleY = self.y + (headerHeight - effectiveFontHeight) * 0.5
+    if showHeader then
+        local fontHeight = love.graphics.getFont():getHeight()
+        local effectiveFontHeight = fontHeight / viewportScale
+        local titleY = self.y + (headerHeight - effectiveFontHeight) * 0.5
 
-    love.graphics.setColor(applyAlpha(textColor, alpha))
-    love.graphics.print(
-        self.title,
-        self.x + 10,
-        titleY,
-        0,
-        1 / viewportScale,
-        1 / viewportScale
-    )
+        love.graphics.setColor(applyAlpha(textColor, alpha))
+        love.graphics.print(
+            self.title,
+            self.x + 10,
+            titleY,
+            0,
+            1 / viewportScale,
+            1 / viewportScale
+        )
 
-    love.graphics.setLineWidth(2)
-    love.graphics.setColor(applyAlpha(borderColor, alpha))
-    love.graphics.line(self.x, self.y + headerHeight, self.x + self.width, self.y + headerHeight)
+        love.graphics.setLineWidth(2)
+        love.graphics.setColor(applyAlpha(borderColor, alpha))
+        love.graphics.line(self.x, self.y + headerHeight, self.x + self.width, self.y + headerHeight)
+    end
 
     love.graphics.setColor(applyAlpha(textColor, alpha))
     self:drawBodyContent(viewportScale, bodyFont, valueFont)
