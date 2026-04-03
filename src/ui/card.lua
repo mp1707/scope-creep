@@ -6,6 +6,10 @@ Card.HEADER_HEIGHT = 34
 
 local INDICATOR_SIZE = 16
 local INDICATOR_GAP = 5
+local MONEY_ICON_PATH = "assets/icons/Green Cash 1st Outline 256px.png"
+
+local moneyIconImage = nil
+local moneyIconLoadAttempted = false
 
 local DEFAULT_STYLES = {
     person = {
@@ -78,6 +82,23 @@ local function drawEnvelopeOutline(x, y, width, height)
     love.graphics.line(right - 4, top + 4, centerX, foldY)
     love.graphics.line(left + 4, bottom - 4, centerX, foldY)
     love.graphics.line(right - 4, bottom - 4, centerX, foldY)
+end
+
+local function getMoneyIconImage()
+    if moneyIconImage or moneyIconLoadAttempted then
+        return moneyIconImage
+    end
+
+    moneyIconLoadAttempted = true
+
+    local ok, loadedImage = pcall(love.graphics.newImage, MONEY_ICON_PATH)
+    if not ok then
+        return nil
+    end
+
+    loadedImage:setFilter("linear", "linear")
+    moneyIconImage = loadedImage
+    return moneyIconImage
 end
 
 function Card.new(config)
@@ -326,27 +347,28 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont)
     end
 
     if self.cardType == "money" then
-        if valueFont then
-            love.graphics.setFont(valueFont)
-        elseif bodyFont then
-            love.graphics.setFont(bodyFont)
+        local moneyIcon = getMoneyIconImage()
+        if not moneyIcon then
+            return
         end
 
-        local valueText = string.format("%d money", self.moneyAmount or 0)
-        local font = love.graphics.getFont()
-        local textHeight = font:getHeight() / viewportScale
-        local textY = self.y + (self.height - textHeight) * 0.52
+        local headerHeight = Card.HEADER_HEIGHT
+        local bodyTop = self.y + headerHeight
+        local bodyHeight = self.height - headerHeight
+        local maxIconWidth = self.width - 36
+        local maxIconHeight = bodyHeight - 28
 
-        love.graphics.printf(
-            valueText,
-            self.x + 8,
-            textY,
-            (self.width - 16) * viewportScale,
-            "center",
-            0,
-            1 / viewportScale,
-            1 / viewportScale
-        )
+        local iconWidth = moneyIcon:getWidth()
+        local iconHeight = moneyIcon:getHeight()
+        local iconScale = math.min(maxIconWidth / iconWidth, maxIconHeight / iconHeight) * 0.6
+        local drawWidth = iconWidth * iconScale
+        local drawHeight = iconHeight * iconScale
+
+        local drawX = self.x + (self.width - drawWidth) * 0.5
+        local drawY = bodyTop + (bodyHeight - drawHeight) * 0.5
+
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(moneyIcon, drawX, drawY, 0, iconScale, iconScale)
     end
 end
 

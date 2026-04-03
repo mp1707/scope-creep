@@ -27,6 +27,11 @@ This file documents the core runtime/setup behavior currently implemented in thi
 - Fonts are also filtered with `linear` in `Theme.load()`.
 - Result: smooth scaling rather than pixel-art nearest-neighbor upscaling.
 
+## Icon Assets
+
+- Use icon assets from `assets/icons` for in-game card visuals.
+- Use the `256px` icon variants as the standard source for game rendering.
+
 ## Resize + Input Mapping
 
 - `love.resize(w, h)` only recalculates scale/offset via `Scaling.resize(w, h)`.
@@ -61,7 +66,9 @@ This file documents the core runtime/setup behavior currently implemented in thi
 ## LOVE Modules
 
 Disabled:
+
 - `joystick`, `physics`, `video`.
 
 Enabled:
+
 - `audio`, `graphics`, `window`, `timer`, `keyboard`, `mouse`, `sound`, `font`, `image`.
