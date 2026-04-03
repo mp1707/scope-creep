@@ -814,11 +814,26 @@ local function drawWorkBars()
 end
 
 local function getShipButtonRect(featureCard)
-    return {
+    local button = {
         x = featureCard.x + 8,
         y = featureCard.y + featureCard.height - 38,
         width = featureCard.width - 16,
         height = 30,
+    }
+
+    local drawScale = featureCard.scale or 1
+    if math.abs(drawScale - 1) < 0.001 then
+        return button
+    end
+
+    local centerX = featureCard.x + featureCard.width * 0.5
+    local centerY = featureCard.y + featureCard.height * 0.5
+
+    return {
+        x = centerX + (button.x - centerX) * drawScale,
+        y = centerY + (button.y - centerY) * drawScale,
+        width = button.width * drawScale,
+        height = button.height * drawScale,
     }
 end
 
@@ -830,23 +845,23 @@ local function isShipButtonVisible(card)
         and not card.stackParentId
 end
 
-local function drawShipButtons()
+local function drawShipButtonForCard(card)
+    if not isShipButtonVisible(card) then
+        return
+    end
+
     love.graphics.setFont(Theme.fonts.uiButton)
 
-    for _, card in ipairs(cards) do
-        if isShipButtonVisible(card) then
-            local button = getShipButtonRect(card)
+    local button = getShipButtonRect(card)
+    local drawScale = card.scale or 1
 
-            love.graphics.setColor(0.44, 0.84, 0.48, 1)
-            love.graphics.rectangle("fill", button.x, button.y, button.width, button.height)
+    love.graphics.setColor(0.44, 0.84, 0.48, 1)
+    love.graphics.rectangle("fill", button.x, button.y, button.width, button.height)
 
-            love.graphics.setColor(0, 0, 0, 1)
-            love.graphics.setLineWidth(2)
-            love.graphics.rectangle("line", button.x, button.y, button.width, button.height)
-
-            love.graphics.printf("Ship it!", button.x, button.y + 2, button.width, "center")
-        end
-    end
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.setLineWidth(2 * drawScale)
+    love.graphics.rectangle("line", button.x, button.y, button.width, button.height)
+    love.graphics.printf("Ship it!", button.x, button.y + 2 * drawScale, button.width, "center")
 
     love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)
@@ -1058,23 +1073,22 @@ local function openOpportunityCard(opportunityCard)
     bringCardsToFront(spawnedCards)
 end
 
-local function drawOpportunityOpenButtons()
+local function drawOpportunityOpenButtonForCard(card)
+    if not isOpportunityOpenButtonVisible(card) then
+        return
+    end
+
     love.graphics.setFont(Theme.fonts.uiButton)
 
-    for _, card in ipairs(cards) do
-        if isOpportunityOpenButtonVisible(card) then
-            local button = getOpportunityOpenButtonRect(card)
+    local button = getOpportunityOpenButtonRect(card)
 
-            love.graphics.setColor(0.44, 0.84, 0.48, 1)
-            love.graphics.rectangle("fill", button.x, button.y, button.width, button.height)
+    love.graphics.setColor(0.44, 0.84, 0.48, 1)
+    love.graphics.rectangle("fill", button.x, button.y, button.width, button.height)
 
-            love.graphics.setColor(0, 0, 0, 1)
-            love.graphics.setLineWidth(2)
-            love.graphics.rectangle("line", button.x, button.y, button.width, button.height)
-
-            love.graphics.printf("Open", button.x, button.y + 2, button.width, "center")
-        end
-    end
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", button.x, button.y, button.width, button.height)
+    love.graphics.printf("Open", button.x, button.y + 2, button.width, "center")
 
     love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)
@@ -1184,21 +1198,23 @@ function love.draw()
         for _, card in ipairs(cards) do
             if not isCardDragging(card) then
                 drawCardWithEffects(card)
+                drawShipButtonForCard(card)
+                drawOpportunityOpenButtonForCard(card)
             end
         end
+
+        drawWorkBars()
+        drawNewDayButton()
 
         drawDragStackShadow()
 
         for _, card in ipairs(cards) do
             if isCardDragging(card) then
                 drawCardWithEffects(card, { skipShadow = true })
+                drawShipButtonForCard(card)
+                drawOpportunityOpenButtonForCard(card)
             end
         end
-
-        drawWorkBars()
-        drawShipButtons()
-        drawOpportunityOpenButtons()
-        drawNewDayButton()
 
         love.graphics.setFont(Theme.fonts.default)
         HotReload:draw(APP_HEIGHT, Scaling.getScale())
@@ -1244,6 +1260,7 @@ function love.mousepressed(x, y, button)
         return
     end
 
+    local selectedCard = nil
     for i = #cards, 1, -1 do
         local card = cards[i]
         if isShipButtonVisible(card) then
@@ -1253,10 +1270,7 @@ function love.mousepressed(x, y, button)
                 return
             end
         end
-    end
 
-    for i = #cards, 1, -1 do
-        local card = cards[i]
         if isOpportunityOpenButtonVisible(card) then
             local openButton = getOpportunityOpenButtonRect(card)
             if pointInRect(gameX, gameY, openButton) then
@@ -1264,11 +1278,7 @@ function love.mousepressed(x, y, button)
                 return
             end
         end
-    end
 
-    local selectedCard = nil
-    for i = #cards, 1, -1 do
-        local card = cards[i]
         if not isCardLocked(card) and card:containsPoint(gameX, gameY) then
             selectedCard = card
             break
