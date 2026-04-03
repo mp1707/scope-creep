@@ -523,7 +523,7 @@ local function restoreCardsFromSnapshot(cardSnapshots)
 end
 
 local function bootstrapCards()
-    if type(state.cards) == "table" and #state.cards > 0 then
+    if type(state.cards) == "table" then
         cards = restoreCardsFromSnapshot(state.cards)
         return
     end
@@ -802,6 +802,11 @@ local function drawCardWithEffects(card, options)
 end
 
 local function drawNewDayButton()
+    local viewportScale = Scaling.getScale()
+    if viewportScale <= 0 then
+        viewportScale = 1
+    end
+
     love.graphics.setFont(Theme.fonts.uiButton)
 
     love.graphics.setColor(0, 0, 0, 0.15)
@@ -813,11 +818,29 @@ local function drawNewDayButton()
     love.graphics.setColor(0.1, 0.2, 0.33, 1)
     love.graphics.setLineWidth(2)
     love.graphics.rectangle("line", NEW_DAY_BUTTON.x, NEW_DAY_BUTTON.y, NEW_DAY_BUTTON.width, NEW_DAY_BUTTON.height, 10, 10)
-    love.graphics.printf("Start New Day", NEW_DAY_BUTTON.x, NEW_DAY_BUTTON.y + 10, NEW_DAY_BUTTON.width, "center")
+    love.graphics.printf(
+        "Start New Day",
+        NEW_DAY_BUTTON.x,
+        NEW_DAY_BUTTON.y + 10,
+        NEW_DAY_BUTTON.width * viewportScale,
+        "center",
+        0,
+        1 / viewportScale,
+        1 / viewportScale
+    )
 
     love.graphics.setFont(Theme.fonts.cardBody)
     love.graphics.setColor(0.05, 0.08, 0.1, 0.75)
-    love.graphics.printf("Day " .. tostring(state.day or 1), NEW_DAY_BUTTON.x, NEW_DAY_BUTTON.y + NEW_DAY_BUTTON.height + 4, NEW_DAY_BUTTON.width, "center")
+    love.graphics.printf(
+        "Day " .. tostring(state.day or 1),
+        NEW_DAY_BUTTON.x,
+        NEW_DAY_BUTTON.y + NEW_DAY_BUTTON.height + 4,
+        NEW_DAY_BUTTON.width * viewportScale,
+        "center",
+        0,
+        1 / viewportScale,
+        1 / viewportScale
+    )
 
     love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)
@@ -852,6 +875,10 @@ end
 
 local function drawConsultingZone()
     local activeDrop = isConsultingDropActive()
+    local viewportScale = Scaling.getScale()
+    if viewportScale <= 0 then
+        viewportScale = 1
+    end
 
     love.graphics.setColor(0, 0, 0, 0.12)
     love.graphics.rectangle("fill", CONSULTING_ZONE.x + 2, CONSULTING_ZONE.y + 2, CONSULTING_ZONE.width, CONSULTING_ZONE.height)
@@ -868,7 +895,16 @@ local function drawConsultingZone()
     love.graphics.rectangle("line", CONSULTING_ZONE.x, CONSULTING_ZONE.y, CONSULTING_ZONE.width, CONSULTING_ZONE.height)
 
     love.graphics.setFont(Theme.fonts.uiButton)
-    love.graphics.printf("Consulting", CONSULTING_ZONE.x, CONSULTING_ZONE.y + 18, CONSULTING_ZONE.width, "center")
+    love.graphics.printf(
+        "Consulting",
+        CONSULTING_ZONE.x,
+        CONSULTING_ZONE.y + 18,
+        CONSULTING_ZONE.width * viewportScale,
+        "center",
+        0,
+        1 / viewportScale,
+        1 / viewportScale
+    )
 
     love.graphics.setFont(Theme.fonts.cardBody)
     Card.drawMoneyAmount(
@@ -876,7 +912,11 @@ local function drawConsultingZone()
         CONSULTING_ZONE.x,
         CONSULTING_ZONE.y + 62,
         CONSULTING_ZONE.width,
-        { align = "center", iconHeightFactor = 0.9 }
+        {
+            align = "center",
+            iconHeightFactor = 0.9,
+            fontScale = 1 / viewportScale,
+        }
     )
 
     love.graphics.setLineWidth(1)
@@ -998,19 +1038,28 @@ local function configureHotReload()
     end
 
     HotReload.setState = function(saved)
-        if not saved then
+        if type(saved) ~= "table" then
             return
         end
 
-        state.time = saved.time or 0
-        state.day = saved.day or 1
-        state.nextCardId = saved.nextCardId or 1
+        local restored = copyState(saved)
 
-        if type(saved.cards) == "table" and #saved.cards > 0 then
-            state.cards = saved.cards
+        state.time = restored.time or 0
+        state.day = restored.day or 1
+        state.nextCardId = restored.nextCardId or 1
+
+        if type(restored.cards) == "table" then
+            state.cards = restored.cards
         else
             state.cards = nil
         end
+
+        bootstrapCards()
+        draggingCards = {}
+        dragRootCard = nil
+        stickyDragMode = false
+        dragPressStartScreenX = nil
+        dragPressStartScreenY = nil
     end
 
     HotReload.onReload = function()
