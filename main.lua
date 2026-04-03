@@ -22,9 +22,11 @@ local CARD_HEIGHT = 190
 local STACK_OFFSET_Y = Card.HEADER_HEIGHT or 34
 local STACK_SNAP_DISTANCE = 80
 local CLICK_ATTACH_THRESHOLD = 6
+local STEVE_ICON_PATH = "assets/icons/characters/adult_29.png"
 
 local WORK_CYCLE_SECONDS = 3
 local WORK_BAR_HEIGHT = 14
+local OPPORTUNITY_CLICK_LIMIT = 3
 
 local NEW_DAY_BUTTON = {
     x = APP_WIDTH - 250,
@@ -49,6 +51,8 @@ local dragPressStartScreenX = nil
 local dragPressStartScreenY = nil
 
 local consumeMoneyAtConsulting
+local spawnMoneyForFeature
+local createSideBounceMotion
 
 local function clamp(value, minValue, maxValue)
     return math.max(minValue, math.min(maxValue, value))
@@ -441,12 +445,14 @@ local function createCard(config)
         cardType = config.cardType,
         title = config.title,
         effect = config.effect,
+        iconPath = config.iconPath,
         maxCapacity = config.maxCapacity,
         capacity = config.capacity,
         costTotal = config.costTotal,
         costRemaining = config.costRemaining,
         value = config.value,
         moneyAmount = config.moneyAmount,
+        insightsRemaining = config.insightsRemaining,
         stackParentId = config.stackParentId,
         workProgress = config.workProgress,
         width = config.width or CARD_WIDTH,
@@ -469,6 +475,7 @@ local function createDefaultCards()
         cardType = "person",
         title = "Steve",
         effect = "no special talents...",
+        iconPath = STEVE_ICON_PATH,
         maxCapacity = 2,
         capacity = 2,
         x = centeredX,
@@ -556,31 +563,23 @@ local function releaseCompletedFeature(featureCard, workerCard)
     featureCard.stackParentId = nil
     featureCard.costRemaining = 0
 
-    local targetX = clamp(workerCard.targetX + CARD_WIDTH + 18, 0, APP_WIDTH - CARD_WIDTH)
-    local startX = featureCard.x
-    local startY = featureCard.y
-    local targetY = clamp(startY, 0, APP_HEIGHT - CARD_HEIGHT)
+    local moneyCard = spawnMoneyForFeature(featureCard)
+    local moneySettleX = clamp(featureCard.x + 92, 0, APP_WIDTH - CARD_WIDTH)
 
-    featureCard.motionState = {
-        kind = "sideBounce",
-        elapsed = 0,
-        duration = 0.62,
-        restHold = 0.06,
-        startX = startX,
-        startY = startY,
-        endX = targetX,
-        endY = targetY,
-        arcHeights = { 36, 22, 0 },
-        arcSplits = { 0.46, 0.76 },
-        xSplits = { 0.58, 0.86 },
-        tilt = 0.11,
-    }
-    featureCard.targetX = startX
-    featureCard.targetY = startY
-    featureCard.rotation = 0
-    featureCard.renderAlpha = 1
+    removeCardInstance(featureCard)
 
-    bringCardsToFront({ featureCard })
+    moneyCard.motionState = createSideBounceMotion(
+        moneyCard.x,
+        moneyCard.y,
+        moneySettleX,
+        clamp(moneyCard.y, 0, APP_HEIGHT - CARD_HEIGHT)
+    )
+    moneyCard.targetX = moneyCard.x
+    moneyCard.targetY = moneyCard.y
+    moneyCard.rotation = 0
+    moneyCard.renderAlpha = 1
+
+    bringCardsToFront({ moneyCard })
 end
 
 local function updateWorkerProgress(dt)
@@ -610,7 +609,7 @@ local function updateWorkerProgress(dt)
     end
 end
 
-local function spawnMoneyForFeature(featureCard)
+spawnMoneyForFeature = function(featureCard)
     local moneyCard = createCard({
         cardType = "money",
         title = "Money",
@@ -625,7 +624,7 @@ local function spawnMoneyForFeature(featureCard)
     return moneyCard
 end
 
-local function createSideBounceMotion(startX, startY, endX, endY, config)
+createSideBounceMotion = function(startX, startY, endX, endY, config)
     local motion = {
         kind = "sideBounce",
         elapsed = 0,
@@ -648,31 +647,6 @@ local function createSideBounceMotion(startX, startY, endX, endY, config)
     end
 
     return motion
-end
-
-local function startShipAnimation(featureCard)
-    if not featureCard or featureCard.shipState or featureCard.motionState then
-        return
-    end
-
-    local startX = featureCard.x
-    local moneyCard = spawnMoneyForFeature(featureCard)
-    local moneySettleX = clamp(startX + 92, 0, APP_WIDTH - CARD_WIDTH)
-
-    removeCardInstance(featureCard)
-
-    moneyCard.motionState = createSideBounceMotion(
-        moneyCard.x,
-        moneyCard.y,
-        moneySettleX,
-        clamp(moneyCard.y, 0, APP_HEIGHT - CARD_HEIGHT)
-    )
-    moneyCard.targetX = moneyCard.x
-    moneyCard.targetY = moneyCard.y
-    moneyCard.rotation = 0
-    moneyCard.renderAlpha = 1
-
-    bringCardsToFront({ moneyCard })
 end
 
 local function updatePhysicalCardMotions(dt)
@@ -813,67 +787,13 @@ local function drawWorkBars()
     love.graphics.setColor(1, 1, 1, 1)
 end
 
-local function getShipButtonRect(featureCard)
-    local button = {
-        x = featureCard.x + 8,
-        y = featureCard.y + featureCard.height - 38,
-        width = featureCard.width - 16,
-        height = 30,
-    }
-
-    local drawScale = featureCard.scale or 1
-    if math.abs(drawScale - 1) < 0.001 then
-        return button
-    end
-
-    local centerX = featureCard.x + featureCard.width * 0.5
-    local centerY = featureCard.y + featureCard.height * 0.5
-
-    return {
-        x = centerX + (button.x - centerX) * drawScale,
-        y = centerY + (button.y - centerY) * drawScale,
-        width = button.width * drawScale,
-        height = button.height * drawScale,
-    }
-end
-
-local function isShipButtonVisible(card)
-    return card.cardType == "feature"
-        and card:isFeatureComplete()
-        and not card.shipState
-        and not card.motionState
-        and not card.stackParentId
-end
-
-local function drawShipButtonForCard(card)
-    if not isShipButtonVisible(card) then
-        return
-    end
-
-    love.graphics.setFont(Theme.fonts.uiButton)
-
-    local button = getShipButtonRect(card)
-    local drawScale = card.scale or 1
-
-    love.graphics.setColor(0.44, 0.84, 0.48, 1)
-    love.graphics.rectangle("fill", button.x, button.y, button.width, button.height)
-
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.setLineWidth(2 * drawScale)
-    love.graphics.rectangle("line", button.x, button.y, button.width, button.height)
-    love.graphics.printf("Ship it!", button.x, button.y + 2 * drawScale, button.width, "center")
-
-    love.graphics.setLineWidth(1)
-    love.graphics.setColor(1, 1, 1, 1)
-end
-
 local function drawCardWithEffects(card, options)
     options = options or {}
 
     local drawOptions = {
         skipShadow = options.skipShadow,
         bodyFont = Theme.fonts.cardBody,
-        valueFont = Theme.fonts.default,
+        valueFont = Theme.fonts.cardBody,
     }
 
     drawOptions.alpha = card.renderAlpha or 1
@@ -951,12 +871,12 @@ local function drawConsultingZone()
     love.graphics.printf("Consulting", CONSULTING_ZONE.x, CONSULTING_ZONE.y + 18, CONSULTING_ZONE.width, "center")
 
     love.graphics.setFont(Theme.fonts.cardBody)
-    love.graphics.printf(
-        string.format("%d money", CONSULTING_ZONE.cost),
+    Card.drawMoneyAmount(
+        CONSULTING_ZONE.cost,
         CONSULTING_ZONE.x,
         CONSULTING_ZONE.y + 62,
         CONSULTING_ZONE.width,
-        "center"
+        { align = "center", iconHeightFactor = 0.9 }
     )
 
     love.graphics.setLineWidth(1)
@@ -976,7 +896,8 @@ local function spawnHighValueOpportunityCard()
 
     local opportunityCard = createCard({
         cardType = "opportunity",
-        title = "High-Value Opportunities",
+        title = "Actionable Insights",
+        insightsRemaining = OPPORTUNITY_CLICK_LIMIT,
         x = startX,
         y = startY,
         targetX = startX,
@@ -1017,30 +938,22 @@ consumeMoneyAtConsulting = function(card)
     return true
 end
 
-local function getOpportunityOpenButtonRect(opportunityCard)
-    return {
-        x = opportunityCard.x,
-        y = opportunityCard.y + opportunityCard.height + 10,
-        width = opportunityCard.width,
-        height = 30,
-    }
-end
-
-local function isOpportunityOpenButtonVisible(card)
-    return card.cardType == "opportunity"
+local function isOpportunityClickable(card)
+    return card ~= nil
+        and card.cardType == "opportunity"
         and not card.motionState
         and not card.shipState
         and not card.stackParentId
+        and (card.insightsRemaining or 0) > 0
 end
 
-local function openOpportunityCard(opportunityCard)
-    if not opportunityCard or not isOpportunityOpenButtonVisible(opportunityCard) then
+local function triggerOpportunityClick(opportunityCard)
+    if not opportunityCard or not isOpportunityClickable(opportunityCard) then
         return
     end
 
     local originX = clamp(opportunityCard.x, 0, APP_WIDTH - CARD_WIDTH)
     local originY = clamp(opportunityCard.y, 0, APP_HEIGHT - CARD_HEIGHT)
-    removeCardInstance(opportunityCard)
 
     local burstTargets = {
         { dx = -220, dy = -110 },
@@ -1048,50 +961,34 @@ local function openOpportunityCard(opportunityCard)
         { dx = 220, dy = -110 },
     }
 
-    local spawnedCards = {}
-    for _, burst in ipairs(burstTargets) do
-        local targetX = clamp(originX + burst.dx, 0, APP_WIDTH - CARD_WIDTH)
-        local targetY = clamp(originY + burst.dy, 0, APP_HEIGHT - CARD_HEIGHT)
+    local remaining = math.max(0, math.floor(opportunityCard.insightsRemaining or 0))
+    local clickIndex = OPPORTUNITY_CLICK_LIMIT - remaining + 1
+    local burst = burstTargets[math.min(math.max(clickIndex, 1), #burstTargets)]
+    local targetX = clamp(originX + burst.dx, 0, APP_WIDTH - CARD_WIDTH)
+    local targetY = clamp(originY + burst.dy, 0, APP_HEIGHT - CARD_HEIGHT)
 
-        local quickWinCard = createCard({
-            cardType = "feature",
-            title = "Quick Win",
-            costTotal = 2,
-            costRemaining = 2,
-            value = 1,
-            x = originX,
-            y = originY,
-            targetX = originX,
-            targetY = originY,
-        })
+    local quickWinCard = createCard({
+        cardType = "feature",
+        title = "Quick Win",
+        costTotal = 2,
+        costRemaining = 2,
+        value = 1,
+        x = originX,
+        y = originY,
+        targetX = originX,
+        targetY = originY,
+    })
 
-        quickWinCard.motionState = createSideBounceMotion(originX, originY, targetX, targetY)
-        table.insert(cards, quickWinCard)
-        table.insert(spawnedCards, quickWinCard)
+    quickWinCard.motionState = createSideBounceMotion(originX, originY, targetX, targetY)
+    table.insert(cards, quickWinCard)
+
+    opportunityCard.insightsRemaining = remaining - 1
+    if opportunityCard.insightsRemaining <= 0 then
+        removeCardInstance(opportunityCard)
+        bringCardsToFront({ quickWinCard })
+    else
+        bringCardsToFront({ opportunityCard, quickWinCard })
     end
-
-    bringCardsToFront(spawnedCards)
-end
-
-local function drawOpportunityOpenButtonForCard(card)
-    if not isOpportunityOpenButtonVisible(card) then
-        return
-    end
-
-    love.graphics.setFont(Theme.fonts.uiButton)
-
-    local button = getOpportunityOpenButtonRect(card)
-
-    love.graphics.setColor(0.44, 0.84, 0.48, 1)
-    love.graphics.rectangle("fill", button.x, button.y, button.width, button.height)
-
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", button.x, button.y, button.width, button.height)
-    love.graphics.printf("Open", button.x, button.y + 2, button.width, "center")
-
-    love.graphics.setLineWidth(1)
-    love.graphics.setColor(1, 1, 1, 1)
 end
 
 local function configureHotReload()
@@ -1198,8 +1095,6 @@ function love.draw()
         for _, card in ipairs(cards) do
             if not isCardDragging(card) then
                 drawCardWithEffects(card)
-                drawShipButtonForCard(card)
-                drawOpportunityOpenButtonForCard(card)
             end
         end
 
@@ -1211,8 +1106,6 @@ function love.draw()
         for _, card in ipairs(cards) do
             if isCardDragging(card) then
                 drawCardWithEffects(card, { skipShadow = true })
-                drawShipButtonForCard(card)
-                drawOpportunityOpenButtonForCard(card)
             end
         end
 
@@ -1263,22 +1156,6 @@ function love.mousepressed(x, y, button)
     local selectedCard = nil
     for i = #cards, 1, -1 do
         local card = cards[i]
-        if isShipButtonVisible(card) then
-            local shipButton = getShipButtonRect(card)
-            if pointInRect(gameX, gameY, shipButton) then
-                startShipAnimation(card)
-                return
-            end
-        end
-
-        if isOpportunityOpenButtonVisible(card) then
-            local openButton = getOpportunityOpenButtonRect(card)
-            if pointInRect(gameX, gameY, openButton) then
-                openOpportunityCard(card)
-                return
-            end
-        end
-
         if not isCardLocked(card) and card:containsPoint(gameX, gameY) then
             selectedCard = card
             break
@@ -1322,7 +1199,18 @@ function love.mousereleased(x, y, button)
         endDragSelection()
         stickyDragMode = false
     else
-        stickyDragMode = true
+        local rootCard = dragRootCard or draggingCards[1]
+        if isOpportunityClickable(rootCard) then
+            for _, card in ipairs(draggingCards) do
+                card:endDrag()
+            end
+            draggingCards = {}
+            dragRootCard = nil
+            stickyDragMode = false
+            triggerOpportunityClick(rootCard)
+        else
+            stickyDragMode = true
+        end
     end
 
     dragPressStartScreenX = nil
