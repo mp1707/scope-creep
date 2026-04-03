@@ -213,7 +213,8 @@ local function drawOpportunityBadge(card, alpha, viewportScale, badgeFont)
     local font = love.graphics.getFont()
     local textWidth = font:getWidth(label) / viewportScale
     local textHeight = font:getHeight() / viewportScale
-    love.graphics.print(label, centerX - textWidth * 0.5, centerY - textHeight * 0.5, 0, 1 / viewportScale, 1 / viewportScale)
+    love.graphics.print(label, centerX - textWidth * 0.5, centerY - textHeight * 0.5, 0, 1 / viewportScale,
+        1 / viewportScale)
 end
 
 function Card.new(config)
@@ -396,7 +397,7 @@ function Card:getSnapshot()
     }
 end
 
-function Card:drawBodyContent(viewportScale, bodyFont, valueFont)
+function Card:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
     local textColor = self:getStyleColor("textColor")
     love.graphics.setColor(textColor)
 
@@ -462,14 +463,16 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont)
             return
         end
 
-        if bodyFont then
+        if headerFont then
+            love.graphics.setFont(headerFont)
+        elseif bodyFont then
             love.graphics.setFont(bodyFont)
         end
 
         love.graphics.printf(
-            "Business\nInsights",
+            "Feature\nIdeas",
             self.x + 12,
-            self.y + 20,
+            self.y + 14,
             (self.width - 24) * viewportScale,
             "center",
             0,
@@ -477,25 +480,35 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont)
             1 / viewportScale
         )
 
-        local maxIconWidth = self.width - 52
-        local maxIconHeight = self.height * 0.34
+        local referenceBodyHeight = self.height - Card.HEADER_HEIGHT
+        local maxIconWidth = self.width - 36
+        local maxIconHeight = referenceBodyHeight - 28
 
         local iconWidth = opportunityIcon:getWidth()
         local iconHeight = opportunityIcon:getHeight()
-        local iconScale = math.min(maxIconWidth / iconWidth, maxIconHeight / iconHeight)
+        local iconScale = math.min(maxIconWidth / iconWidth, maxIconHeight / iconHeight) * 0.6
         local drawWidth = iconWidth * iconScale
         local drawHeight = iconHeight * iconScale
         local drawX = self.x + (self.width - drawWidth) * 0.5
-        local drawY = self.y + self.height * 0.55 - drawHeight * 0.5
+        local topTextY = self.y + 14
+        local topTextLineHeight = love.graphics.getFont():getHeight() / viewportScale
+        local topTextBottom = topTextY + topTextLineHeight * 2
+        local bottomTextY = self.y + self.height - 34
+        local iconCenterY = (topTextBottom + bottomTextY) * 0.5
+        local drawY = iconCenterY - drawHeight * 0.5
 
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.draw(opportunityIcon, drawX, drawY, 0, iconScale, iconScale)
+
+        if bodyFont then
+            love.graphics.setFont(bodyFont)
+        end
 
         love.graphics.setColor(textColor)
         love.graphics.printf(
             "Booster Pack",
             self.x + 12,
-            self.y + self.height - 44,
+            bottomTextY,
             (self.width - 24) * viewportScale,
             "center",
             0,
@@ -677,7 +690,7 @@ function Card:draw(headerFont, options)
     end
 
     love.graphics.setColor(applyAlpha(textColor, alpha))
-    self:drawBodyContent(viewportScale, bodyFont, valueFont)
+    self:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
     self:drawIndicators(alpha)
     drawOpportunityBadge(self, alpha, viewportScale, bodyFont)
 
