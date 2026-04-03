@@ -44,6 +44,20 @@ local function clamp(value, minValue, maxValue)
     return math.max(minValue, math.min(maxValue, value))
 end
 
+local function damp(current, target, speed, dt)
+    local t = 1 - math.exp(-speed * dt)
+    return current + (target - current) * t
+end
+
+local function lerp(a, b, t)
+    return a + (b - a) * t
+end
+
+local function easeOutQuad(t)
+    local inv = 1 - t
+    return 1 - (inv * inv)
+end
+
 local function copyState(value)
     if type(value) ~= "table" then
         return value
@@ -82,6 +96,10 @@ local function isCardDragging(cardToFind)
         end
     end
     return false
+end
+
+local function isCardLocked(card)
+    return card ~= nil and (card.shipState ~= nil or card.motionState ~= nil)
 end
 
 local function bringCardsToFront(cardsToRaise)
@@ -192,7 +210,7 @@ local function canAttachCard(cardToSnap, targetCard, excludedCards)
         return false
     end
 
-    if cardToSnap.shipState or targetCard.shipState then
+    if isCardLocked(cardToSnap) or isCardLocked(targetCard) then
         return false
     end
 
@@ -489,7 +507,7 @@ end
 local function serializeCards()
     local snapshots = {}
     for _, card in ipairs(cards) do
-        if not card.shipState then
+        if not card.shipState and not (card.motionState and card.motionState.skipSerialize) then
             table.insert(snapshots, card:getSnapshot())
         end
     end
@@ -511,14 +529,36 @@ local function releaseCompletedFeature(featureCard, workerCard)
         return
     end
 
+    if featureCard.motionState or featureCard.shipState then
+        return
+    end
+
     featureCard.stackParentId = nil
     featureCard.costRemaining = 0
 
-    local targetX = clamp(workerCard.targetX + CARD_WIDTH + 30, 0, APP_WIDTH - CARD_WIDTH)
-    local targetY = clamp(workerCard.targetY + 8, 0, APP_HEIGHT - CARD_HEIGHT)
+    local targetX = clamp(workerCard.targetX + CARD_WIDTH + 18, 0, APP_WIDTH - CARD_WIDTH)
+    local startX = featureCard.x
+    local startY = featureCard.y
+    local targetY = clamp(startY, 0, APP_HEIGHT - CARD_HEIGHT)
 
-    featureCard.targetX = targetX
-    featureCard.targetY = targetY
+    featureCard.motionState = {
+        kind = "sideBounce",
+        elapsed = 0,
+        duration = 0.62,
+        restHold = 0.06,
+        startX = startX,
+        startY = startY,
+        endX = targetX,
+        endY = targetY,
+        arcHeights = { 36, 22, 18 },
+        arcSplits = { 0.46, 0.76 },
+        xSplits = { 0.58, 0.86 },
+        tilt = 0.11,
+    }
+    featureCard.targetX = startX
+    featureCard.targetY = startY
+    featureCard.rotation = 0
+    featureCard.renderAlpha = 1
 
     bringCardsToFront({ featureCard })
 end
@@ -550,13 +590,6 @@ local function updateWorkerProgress(dt)
     end
 end
 
-local function startShipAnimation(featureCard)
-    featureCard.shipState = {
-        elapsed = 0,
-        duration = 0.34,
-    }
-end
-
 local function spawnMoneyForFeature(featureCard)
     local moneyCard = createCard({
         cardType = "money",
@@ -569,29 +602,134 @@ local function spawnMoneyForFeature(featureCard)
     })
 
     table.insert(cards, moneyCard)
+    return moneyCard
 end
 
-local function updateShipAnimations(dt)
-    local cardsToFinish = {}
-
-    for _, card in ipairs(cards) do
-        if card.shipState then
-            card.shipState.elapsed = card.shipState.elapsed + dt
-            if card.shipState.elapsed >= card.shipState.duration then
-                table.insert(cardsToFinish, card)
-            end
-        end
+local function startShipAnimation(featureCard)
+    if not featureCard or featureCard.shipState or featureCard.motionState then
+        return
     end
 
-    for _, card in ipairs(cardsToFinish) do
-        spawnMoneyForFeature(card)
-        removeCardInstance(card)
+    local startX = featureCard.x
+    local moneyCard = spawnMoneyForFeature(featureCard)
+    local moneySettleX = clamp(startX + 92, 0, APP_WIDTH - CARD_WIDTH)
+
+    removeCardInstance(featureCard)
+
+    moneyCard.motionState = {
+        kind = "sideBounce",
+        elapsed = 0,
+        duration = 0.62,
+        restHold = 0.06,
+        startX = moneyCard.x,
+        startY = moneyCard.y,
+        endX = moneySettleX,
+        endY = clamp(moneyCard.y, 0, APP_HEIGHT - CARD_HEIGHT),
+        arcHeights = { 36, 22, 18 },
+        arcSplits = { 0.46, 0.76 },
+        xSplits = { 0.58, 0.86 },
+        tilt = 0.11,
+    }
+    moneyCard.targetX = moneyCard.x
+    moneyCard.targetY = moneyCard.y
+    moneyCard.rotation = 0
+    moneyCard.renderAlpha = 1
+
+    bringCardsToFront({ moneyCard })
+end
+
+local function updatePhysicalCardMotions(dt)
+    for _, card in ipairs(cards) do
+        local motion = card.motionState
+        if motion then
+            card.dragging = false
+            card.targetScale = 1
+            card.targetShadowOffsetX = 4
+            card.targetShadowOffsetY = 4
+            card.targetShadowAlpha = 0.12
+            card.targetShadowExpand = 0
+
+            if motion.kind ~= "sideBounce" then
+                motion.kind = "sideBounce"
+                motion.elapsed = motion.elapsed or 0
+                motion.duration = motion.duration or 0.62
+                motion.restHold = motion.restHold or 0.06
+                motion.startX = motion.startX or card.x
+                motion.startY = motion.startY or card.y
+                motion.endX = motion.endX or motion.settleX or card.x
+                motion.endY = motion.endY or motion.floorY or card.y
+                motion.arcHeights = motion.arcHeights or { 38, 24, 14 }
+                motion.arcSplits = motion.arcSplits or { 0.46, 0.76 }
+                motion.tilt = motion.tilt or 0.11
+                motion.xSplits = motion.xSplits or { 0.58, 0.86 }
+            end
+
+            motion.elapsed = (motion.elapsed or 0) + dt
+            local progress = clamp((motion.elapsed or 0) / (motion.duration or 0.62), 0, 1)
+            local splitA = motion.arcSplits[1] or 0.46
+            local splitB = motion.arcSplits[2] or 0.76
+            local xSplitA = motion.xSplits[1] or 0.58
+            local xSplitB = motion.xSplits[2] or 0.86
+
+            local moveT = 0
+            if progress < splitA then
+                local u = progress / splitA
+                moveT = lerp(0, xSplitA, easeOutQuad(u))
+            elseif progress < splitB then
+                local u = (progress - splitA) / (splitB - splitA)
+                moveT = lerp(xSplitA, xSplitB, easeOutQuad(u))
+            else
+                local u = (progress - splitB) / (1 - splitB)
+                moveT = lerp(xSplitB, 1, easeOutQuad(u))
+            end
+
+            card.x = lerp(motion.startX, motion.endX, moveT)
+
+            local lift = 0
+            if progress < splitA then
+                local u = progress / splitA
+                lift = math.sin(u * math.pi) * (motion.arcHeights[1] or 38)
+            elseif progress < splitB then
+                local u = (progress - splitA) / (splitB - splitA)
+                lift = math.sin(u * math.pi) * (motion.arcHeights[2] or 24)
+            elseif progress < 1 then
+                local u = (progress - splitB) / (1 - splitB)
+                lift = math.sin(u * math.pi) * (motion.arcHeights[3] or 14)
+            end
+
+            card.y = lerp(motion.startY, motion.endY, moveT) - lift
+
+            if progress >= 1 then
+                card.x = motion.endX
+                card.y = motion.endY
+                motion.restElapsed = (motion.restElapsed or 0) + dt
+                if motion.restElapsed >= (motion.restHold or 0.06) then
+                    card.motionState = nil
+                    card.rotation = 0
+                    card.renderAlpha = 1
+                end
+            end
+
+            local direction = (motion.endX >= motion.startX) and 1 or -1
+            local tiltWave = math.sin(progress * math.pi) * (motion.tilt or 0.11) * direction
+            card.rotation = damp(card.rotation or 0, tiltWave, 10, dt)
+
+            card.x = clamp(card.x, 0, APP_WIDTH - CARD_WIDTH)
+            card.y = clamp(card.y, 0, APP_HEIGHT - CARD_HEIGHT)
+            card.targetX = card.x
+            card.targetY = card.y
+            card.renderAlpha = 1
+        else
+            card.rotation = damp(card.rotation or 0, 0, 12, dt)
+            card.renderAlpha = 1
+        end
+
     end
 end
 
 local function updateAttachedCardTargets()
     for _, card in ipairs(cards) do
-        if card.stackParentId and not card:isDragging() then
+        if card.stackParentId and not card:isDragging() and not card.motionState then
             local parent = getCardById(card.stackParentId)
             if parent then
                 card.targetX = clamp(parent.targetX, 0, APP_WIDTH - CARD_WIDTH)
@@ -651,6 +789,7 @@ local function isShipButtonVisible(card)
     return card.cardType == "feature"
         and card:isFeatureComplete()
         and not card.shipState
+        and not card.motionState
         and not card.stackParentId
 end
 
@@ -676,24 +815,6 @@ local function drawShipButtons()
     love.graphics.setColor(1, 1, 1, 1)
 end
 
-local function drawShipPuff(card)
-    if not card.shipState then
-        return
-    end
-
-    local progress = clamp(card.shipState.elapsed / card.shipState.duration, 0, 1)
-    local centerX = card.x + card.width * 0.5
-    local centerY = card.y + card.height * 0.45
-    local radiusBase = 12 + 28 * progress
-    local alpha = 0.45 * (1 - progress)
-
-    love.graphics.setColor(1, 1, 1, alpha)
-    love.graphics.circle("fill", centerX - 20, centerY - 4, radiusBase)
-    love.graphics.circle("fill", centerX + 16, centerY + 5, radiusBase * 0.9)
-    love.graphics.circle("fill", centerX, centerY - 16, radiusBase * 0.75)
-    love.graphics.setColor(1, 1, 1, 1)
-end
-
 local function drawCardWithEffects(card, options)
     options = options or {}
 
@@ -703,17 +824,9 @@ local function drawCardWithEffects(card, options)
         valueFont = Theme.fonts.default,
     }
 
-    if card.shipState then
-        local progress = clamp(card.shipState.elapsed / card.shipState.duration, 0, 1)
-        drawOptions.alpha = 1 - progress
-        drawOptions.extraScale = 1 + 0.18 * progress
-    end
+    drawOptions.alpha = card.renderAlpha or 1
 
     card:draw(Theme.fonts.cardHeader, drawOptions)
-
-    if card.shipState then
-        drawShipPuff(card)
-    end
 end
 
 local function drawNewDayButton()
@@ -819,19 +932,21 @@ function love.update(dt)
     local gameX, gameY = screenToGame(mouseX, mouseY)
 
     updateAttachedCardTargets()
+    updateWorkerProgress(dt)
 
     for _, card in ipairs(cards) do
-        local pointerX = nil
-        local pointerY = nil
-        if card:isDragging() then
-            pointerX = gameX
-            pointerY = gameY
+        if not card.motionState then
+            local pointerX = nil
+            local pointerY = nil
+            if card:isDragging() then
+                pointerX = gameX
+                pointerY = gameY
+            end
+            card:update(dt, pointerX, pointerY)
         end
-        card:update(dt, pointerX, pointerY)
     end
 
-    updateWorkerProgress(dt)
-    updateShipAnimations(dt)
+    updatePhysicalCardMotions(dt)
 
     serializeCards()
     HotReload:update(dt)
@@ -917,7 +1032,7 @@ function love.mousepressed(x, y, button)
     local selectedCard = nil
     for i = #cards, 1, -1 do
         local card = cards[i]
-        if not card.shipState and card:containsPoint(gameX, gameY) then
+        if not isCardLocked(card) and card:containsPoint(gameX, gameY) then
             selectedCard = card
             break
         end

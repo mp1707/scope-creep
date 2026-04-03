@@ -26,7 +26,7 @@ local DEFAULT_STYLES = {
     },
     money = {
         bodyColor = { 1, 1, 1, 1 },
-        headerColor = { 1, 1, 1, 1 },
+        headerColor = { 0.56, 0.84, 0.55, 1 },
         borderColor = { 0, 0, 0, 1 },
         textColor = { 0, 0, 0, 1 },
         indicatorFill = { 0.82, 0.86, 0.82, 1 },
@@ -109,6 +109,8 @@ function Card.new(config)
 
     self.style = config.style or {}
     self.shipState = nil
+    self.rotation = 0
+    self.renderAlpha = 1
 
     return self
 end
@@ -352,9 +354,11 @@ function Card:draw(headerFont, options)
     local centerX = self.x + self.width * 0.5
     local centerY = self.y + self.height * 0.5
     local drawScale = self.scale * extraScale
+    local drawRotation = self.rotation or 0
 
     love.graphics.push()
     love.graphics.translate(centerX, centerY)
+    love.graphics.rotate(drawRotation)
     love.graphics.scale(drawScale, drawScale)
     love.graphics.translate(-centerX, -centerY)
 
