@@ -16,17 +16,24 @@ local state = {
 local GRID_SIZE = 30
 local GRID_COLOR = { 0.84, 0.86, 0.8, 0.32 }
 
+local CARD_BODY_ASPECT_WIDTH = 300
+local CARD_BODY_ASPECT_HEIGHT = 350
 local CARD_WIDTH = 150
-local CARD_HEIGHT = 190
+local CARD_BODY_HEIGHT = math.floor((CARD_WIDTH * CARD_BODY_ASPECT_HEIGHT / CARD_BODY_ASPECT_WIDTH) + 0.5)
+local CARD_HEIGHT = (Card.HEADER_HEIGHT or 34) + CARD_BODY_HEIGHT
 
 local STACK_OFFSET_Y = Card.HEADER_HEIGHT or 34
 local STACK_SNAP_DISTANCE = 80
 local CLICK_ATTACH_THRESHOLD = 6
-local STEVE_ICON_PATH = "assets/icons/characters/adult_29.png"
+local STEVE_ICON_PATH = "assets/icons/characters/sleep.png"
 
 local WORK_CYCLE_SECONDS = 3
 local WORK_BAR_HEIGHT = 14
 local OPPORTUNITY_CLICK_LIMIT = 3
+local PERSON_HOVER_HEIGHT = 58
+local PERSON_HOVER_GAP = 14
+local PERSON_HOVER_INDICATOR_SIZE = 16
+local PERSON_HOVER_INDICATOR_GAP = 5
 
 local NEW_DAY_BUTTON = {
     x = APP_WIDTH - 250,
@@ -474,7 +481,7 @@ local function createDefaultCards()
     local steveCard = createCard({
         cardType = "person",
         title = "Steve",
-        effect = "no special talents...",
+        effect = "No special talents",
         iconPath = STEVE_ICON_PATH,
         maxCapacity = 2,
         capacity = 2,
@@ -734,7 +741,6 @@ local function updatePhysicalCardMotions(dt)
             card.rotation = damp(card.rotation or 0, 0, 12, dt)
             card.renderAlpha = 1
         end
-
     end
 end
 
@@ -787,6 +793,88 @@ local function drawWorkBars()
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+local function getPersonEffectText(card)
+    local effectText = card and card.effect
+    if not effectText or effectText == "" then
+        return "No special talents"
+    end
+    return effectText
+end
+
+local function getTopHoveredPersonCard(gameX, gameY)
+    if not gameX or not gameY then
+        return nil
+    end
+
+    for i = #cards, 1, -1 do
+        local card = cards[i]
+        if card:containsPoint(gameX, gameY) then
+            if card.cardType == "person" then
+                return card
+            end
+            return nil
+        end
+    end
+
+    return nil
+end
+
+local function drawPersonHoverOverlay(card)
+    if not card then
+        return
+    end
+
+    local viewportScale = Scaling.getScale()
+    if viewportScale <= 0 then
+        viewportScale = 1
+    end
+
+    local overlayX = card.x
+    local overlayY = math.max(8, card.y - PERSON_HOVER_HEIGHT - PERSON_HOVER_GAP)
+
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", overlayX, overlayY, card.width, PERSON_HOVER_HEIGHT)
+
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.setLineWidth(3)
+    love.graphics.rectangle("line", overlayX, overlayY, card.width, PERSON_HOVER_HEIGHT)
+
+    love.graphics.setFont(Theme.fonts.cardBody)
+    love.graphics.printf(
+        getPersonEffectText(card),
+        overlayX + 10,
+        overlayY + 8,
+        (card.width - 20) * viewportScale,
+        "center",
+        0,
+        1 / viewportScale,
+        1 / viewportScale
+    )
+
+    local total = math.min(card.maxCapacity or 0, 8)
+    local filled = math.max(0, card.capacity or 0)
+    if total > 0 then
+        local indicatorsWidth = total * PERSON_HOVER_INDICATOR_SIZE + (total - 1) * PERSON_HOVER_INDICATOR_GAP
+        local startX = overlayX + (card.width - indicatorsWidth) * 0.5
+        local startY = overlayY + PERSON_HOVER_HEIGHT - PERSON_HOVER_INDICATOR_SIZE - 8
+
+        for i = 1, total do
+            if i <= filled then
+                love.graphics.setColor(0.53, 0.79, 0.98, 1)
+            else
+                love.graphics.setColor(0.79, 0.82, 0.86, 1)
+            end
+
+            local indicatorX = startX + (i - 1) * (PERSON_HOVER_INDICATOR_SIZE + PERSON_HOVER_INDICATOR_GAP)
+            love.graphics.rectangle("fill", indicatorX, startY, PERSON_HOVER_INDICATOR_SIZE, PERSON_HOVER_INDICATOR_SIZE,
+                4, 4)
+        end
+    end
+
+    love.graphics.setLineWidth(1)
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
 local function drawCardWithEffects(card, options)
     options = options or {}
 
@@ -810,14 +898,17 @@ local function drawNewDayButton()
     love.graphics.setFont(Theme.fonts.uiButton)
 
     love.graphics.setColor(0, 0, 0, 0.15)
-    love.graphics.rectangle("fill", NEW_DAY_BUTTON.x + 2, NEW_DAY_BUTTON.y + 2, NEW_DAY_BUTTON.width, NEW_DAY_BUTTON.height, 10, 10)
+    love.graphics.rectangle("fill", NEW_DAY_BUTTON.x + 2, NEW_DAY_BUTTON.y + 2, NEW_DAY_BUTTON.width,
+        NEW_DAY_BUTTON.height, 10, 10)
 
     love.graphics.setColor(0.94, 0.97, 1, 1)
-    love.graphics.rectangle("fill", NEW_DAY_BUTTON.x, NEW_DAY_BUTTON.y, NEW_DAY_BUTTON.width, NEW_DAY_BUTTON.height, 10, 10)
+    love.graphics.rectangle("fill", NEW_DAY_BUTTON.x, NEW_DAY_BUTTON.y, NEW_DAY_BUTTON.width, NEW_DAY_BUTTON.height, 10,
+        10)
 
     love.graphics.setColor(0.1, 0.2, 0.33, 1)
     love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", NEW_DAY_BUTTON.x, NEW_DAY_BUTTON.y, NEW_DAY_BUTTON.width, NEW_DAY_BUTTON.height, 10, 10)
+    love.graphics.rectangle("line", NEW_DAY_BUTTON.x, NEW_DAY_BUTTON.y, NEW_DAY_BUTTON.width, NEW_DAY_BUTTON.height, 10,
+        10)
     love.graphics.printf(
         "Start New Day",
         NEW_DAY_BUTTON.x,
@@ -881,7 +972,8 @@ local function drawConsultingZone()
     end
 
     love.graphics.setColor(0, 0, 0, 0.12)
-    love.graphics.rectangle("fill", CONSULTING_ZONE.x + 2, CONSULTING_ZONE.y + 2, CONSULTING_ZONE.width, CONSULTING_ZONE.height)
+    love.graphics.rectangle("fill", CONSULTING_ZONE.x + 2, CONSULTING_ZONE.y + 2, CONSULTING_ZONE.width,
+        CONSULTING_ZONE.height)
 
     if activeDrop then
         love.graphics.setColor(0.78, 0.95, 0.78, 1)
@@ -997,8 +1089,8 @@ local function triggerOpportunityClick(opportunityCard)
 
     local burstTargets = {
         { dx = -220, dy = -110 },
-        { dx = 0, dy = -185 },
-        { dx = 220, dy = -110 },
+        { dx = 0,    dy = -185 },
+        { dx = 220,  dy = -110 },
     }
 
     local remaining = math.max(0, math.floor(opportunityCard.insightsRemaining or 0))
@@ -1138,6 +1230,10 @@ end
 
 function love.draw()
     Scaling.draw(function()
+        local mouseX, mouseY = love.mouse.getPosition()
+        local gameX, gameY = screenToGame(mouseX, mouseY)
+        local hoveredPersonCard = getTopHoveredPersonCard(gameX, gameY)
+
         drawPaperGrid()
         drawConsultingZone()
 
@@ -1148,6 +1244,7 @@ function love.draw()
         end
 
         drawWorkBars()
+        drawPersonHoverOverlay(hoveredPersonCard)
         drawNewDayButton()
 
         drawDragStackShadow()

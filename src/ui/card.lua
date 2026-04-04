@@ -6,6 +6,8 @@ Card.HEADER_HEIGHT = 34
 
 local INDICATOR_SIZE = 16
 local INDICATOR_GAP = 5
+local CARD_BODY_ASPECT_WIDTH = 300
+local CARD_BODY_ASPECT_HEIGHT = 350
 local MONEY_ICON_PATH = "assets/icons/Green Cash 1st Outline 256px.png"
 local OPPORTUNITY_ICON_PATH = "assets/icons/Golden Star 1st Outline 256px.png"
 
@@ -15,6 +17,7 @@ local opportunityIconImage = nil
 local opportunityIconLoadAttempted = false
 local cardIconImageCache = {}
 local cardIconLoadAttempted = {}
+local coverQuadCache = setmetatable({}, { __mode = "k" })
 
 local DEFAULT_STYLES = {
     person = {
@@ -125,6 +128,38 @@ local function getCardIconImage(iconPath)
     loadedImage:setFilter("linear", "linear")
     cardIconImageCache[iconPath] = loadedImage
     return loadedImage
+end
+
+local function drawImageCover(image, x, y, width, height, alpha)
+    local imageWidth = image:getWidth()
+    local imageHeight = image:getHeight()
+    if imageWidth <= 0 or imageHeight <= 0 or width <= 0 or height <= 0 then
+        return
+    end
+
+    local scale = math.max(width / imageWidth, height / imageHeight)
+    local sourceWidth = width / scale
+    local sourceHeight = height / scale
+    local sourceX = (imageWidth - sourceWidth) * 0.5
+    local sourceY = (imageHeight - sourceHeight) * 0.5
+
+    local quad = coverQuadCache[image]
+    if not quad then
+        quad = love.graphics.newQuad(0, 0, 1, 1, imageWidth, imageHeight)
+        coverQuadCache[image] = quad
+    end
+    quad:setViewport(sourceX, sourceY, sourceWidth, sourceHeight, imageWidth, imageHeight)
+
+    love.graphics.setColor(1, 1, 1, alpha or 1)
+    love.graphics.draw(
+        image,
+        quad,
+        x,
+        y,
+        0,
+        width / sourceWidth,
+        height / sourceHeight
+    )
 end
 
 local function drawMoneyAmountWithIcon(amount, x, y, width, options)
@@ -242,7 +277,8 @@ function Card.new(config)
     self.workProgress = config.workProgress or 0
 
     self.width = config.width or 160
-    self.height = config.height or math.floor(self.width * (7 / 5))
+    local defaultBodyHeight = math.floor((self.width * CARD_BODY_ASPECT_HEIGHT / CARD_BODY_ASPECT_WIDTH) + 0.5)
+    self.height = config.height or (Card.HEADER_HEIGHT + defaultBodyHeight)
 
     self.worldWidth = config.worldWidth or 1920
     self.worldHeight = config.worldHeight or 1080
@@ -402,57 +438,11 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
     love.graphics.setColor(textColor)
 
     if self.cardType == "person" then
-        if bodyFont then
-            love.graphics.setFont(bodyFont)
-        end
-
-        local effectText = self.effect
-        if not effectText or effectText == "" then
-            effectText = "no special talents..."
-        end
-
         local portraitImage = getCardIconImage(self.iconPath)
         if portraitImage then
-            local headerHeight = Card.HEADER_HEIGHT
-            local bodyTop = self.y + headerHeight
-            local bodyHeight = self.height - headerHeight
-            local maxIconWidth = self.width - 48
-            local maxIconHeight = bodyHeight * 0.4
-
-            local iconWidth = portraitImage:getWidth()
-            local iconHeight = portraitImage:getHeight()
-            local iconScale = math.min(maxIconWidth / iconWidth, maxIconHeight / iconHeight)
-
-            local drawWidth = iconWidth * iconScale
-            local drawHeight = iconHeight * iconScale
-            local drawX = self.x + (self.width - drawWidth) * 0.5
-            local drawY = bodyTop + 12
-
-            love.graphics.setColor(1, 1, 1, 1)
-            love.graphics.draw(portraitImage, drawX, drawY, 0, iconScale, iconScale)
-
-            love.graphics.setColor(textColor)
-            love.graphics.printf(
-                effectText,
-                self.x + 10,
-                drawY + drawHeight + 10,
-                (self.width - 20) * viewportScale,
-                "center",
-                0,
-                1 / viewportScale,
-                1 / viewportScale
-            )
-        else
-            love.graphics.printf(
-                effectText,
-                self.x + 10,
-                self.y + Card.HEADER_HEIGHT + 14,
-                (self.width - 20) * viewportScale,
-                "left",
-                0,
-                1 / viewportScale,
-                1 / viewportScale
-            )
+            local bodyTop = self.y + Card.HEADER_HEIGHT
+            local bodyHeight = self.height - Card.HEADER_HEIGHT
+            drawImageCover(portraitImage, self.x, bodyTop, self.width, bodyHeight, 1)
         end
         return
     end
@@ -573,10 +563,7 @@ function Card:drawIndicators(alpha)
     local total = 0
     local filled = 0
 
-    if self.cardType == "person" then
-        total = self.maxCapacity or 0
-        filled = self.capacity or 0
-    elseif self.cardType == "feature" then
+    if self.cardType == "feature" then
         if self:isFeatureComplete() then
             return
         end
@@ -691,6 +678,15 @@ function Card:draw(headerFont, options)
 
     love.graphics.setColor(applyAlpha(textColor, alpha))
     self:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
+
+    if self.cardType == "person" then
+        love.graphics.setColor(applyAlpha(borderColor, alpha))
+        love.graphics.setLineWidth(3)
+        love.graphics.rectangle("line", self.x, self.y, self.width, self.height)
+        love.graphics.setLineWidth(2)
+        love.graphics.line(self.x, self.y + headerHeight, self.x + self.width, self.y + headerHeight)
+    end
+
     self:drawIndicators(alpha)
     drawOpportunityBadge(self, alpha, viewportScale, bodyFont)
 
