@@ -29,6 +29,8 @@ local STACK_OFFSET_Y = Card.HEADER_HEIGHT or 34
 local STACK_SNAP_DISTANCE = 80
 local CLICK_ATTACH_THRESHOLD = 6
 local STEVE_ICON_PATH = "assets/icons/characters/sleep.png"
+local CONSULTING_ICON_PATH = "assets/icons/characters/consulting.png"
+local MONEY_ICON_PATH = "assets/icons/Green Cash 1st Outline 256px.png"
 
 local WORK_CYCLE_SECONDS = 3
 local WORK_BAR_HEIGHT = 14
@@ -40,6 +42,8 @@ local PERSON_HOVER_HEIGHT = 58
 local PERSON_HOVER_GAP = 14
 local PERSON_HOVER_INDICATOR_SIZE = 16
 local PERSON_HOVER_INDICATOR_GAP = 5
+local CONSULTING_HOVER_HEIGHT = 58
+local CONSULTING_HOVER_GAP = 14
 
 local NEW_DAY_BUTTON = {
     width = 220,
@@ -49,11 +53,11 @@ local NEW_DAY_BUTTON = {
 }
 
 local CONSULTING_ZONE = {
-    width = 250,
-    height = 112,
+    width = 210,
+    height = 237,
     marginLeft = 34,
-    visibleHeight = 84,
-    hoverLift = 16,
+    visibleHeight = 214,
+    hoverLift = 11,
     cost = 1,
 }
 
@@ -67,6 +71,11 @@ local camera = {
 }
 
 local consultingHover = 0
+local consultingZoneImage = nil
+local consultingZoneLoadAttempted = false
+local moneyIconImage = nil
+local moneyIconLoadAttempted = false
+local coverQuadCache = setmetatable({}, { __mode = "k" })
 
 local cards = {}
 local draggingCards = {}
@@ -101,6 +110,114 @@ end
 local function easeOutQuad(t)
     local inv = 1 - t
     return 1 - (inv * inv)
+end
+
+local function getConsultingZoneImage()
+    if consultingZoneImage or consultingZoneLoadAttempted then
+        return consultingZoneImage
+    end
+
+    consultingZoneLoadAttempted = true
+
+    local ok, loadedImage = pcall(love.graphics.newImage, CONSULTING_ICON_PATH)
+    if not ok then
+        return nil
+    end
+
+    loadedImage:setFilter("linear", "linear")
+    consultingZoneImage = loadedImage
+    return consultingZoneImage
+end
+
+local function getMoneyIconImage()
+    if moneyIconImage or moneyIconLoadAttempted then
+        return moneyIconImage
+    end
+
+    moneyIconLoadAttempted = true
+
+    local ok, loadedImage = pcall(love.graphics.newImage, MONEY_ICON_PATH)
+    if not ok then
+        return nil
+    end
+
+    loadedImage:setFilter("linear", "linear")
+    moneyIconImage = loadedImage
+    return moneyIconImage
+end
+
+local function drawImageCover(image, x, y, width, height)
+    local imageWidth = image:getWidth()
+    local imageHeight = image:getHeight()
+    if imageWidth <= 0 or imageHeight <= 0 or width <= 0 or height <= 0 then
+        return
+    end
+
+    local scale = math.max(width / imageWidth, height / imageHeight)
+    local sourceWidth = width / scale
+    local sourceHeight = height / scale
+    local sourceX = (imageWidth - sourceWidth) * 0.5
+    local sourceY = (imageHeight - sourceHeight) * 0.5
+
+    local quad = coverQuadCache[image]
+    if not quad then
+        quad = love.graphics.newQuad(0, 0, 1, 1, imageWidth, imageHeight)
+        coverQuadCache[image] = quad
+    end
+    quad:setViewport(sourceX, sourceY, sourceWidth, sourceHeight, imageWidth, imageHeight)
+
+    love.graphics.draw(
+        image,
+        quad,
+        x,
+        y,
+        0,
+        width / sourceWidth,
+        height / sourceHeight
+    )
+end
+
+local function drawConsultingPriceLine(x, y, width, price, viewportScale)
+    local fontScale = 1 / viewportScale
+    local numericPrice = math.max(0, math.floor(tonumber(price) or 0))
+    local labelText = "Preis:"
+    local amountText = string.format("%d x", numericPrice)
+    local iconHeightFactor = 0.9
+
+    local font = love.graphics.getFont()
+    local textHeight = font:getHeight() * fontScale
+    local labelWidth = font:getWidth(labelText) * fontScale
+    local amountWidth = font:getWidth(amountText) * fontScale
+
+    local iconWidth = 0
+    local iconHeight = 0
+    local iconGap = 0
+    local moneyIcon = getMoneyIconImage()
+    if moneyIcon then
+        iconHeight = textHeight * iconHeightFactor
+        iconWidth = moneyIcon:getWidth() * (iconHeight / moneyIcon:getHeight())
+        iconGap = math.max(4, math.floor(textHeight * 0.3))
+    end
+
+    local sectionGap = math.max(8, math.floor(textHeight * 0.45))
+    local contentWidth = labelWidth + sectionGap + amountWidth + iconGap + iconWidth
+    local startX = x + (width - contentWidth) * 0.5
+    local textY = y
+
+    local textR, textG, textB, textA = love.graphics.getColor()
+
+    love.graphics.print(labelText, startX, textY, 0, fontScale, fontScale)
+
+    local amountX = startX + labelWidth + sectionGap
+    love.graphics.print(amountText, amountX, textY, 0, fontScale, fontScale)
+
+    if moneyIcon then
+        local iconX = amountX + amountWidth + iconGap
+        local iconY = textY + (textHeight - iconHeight) * 0.5
+        love.graphics.setColor(1, 1, 1, textA or 1)
+        love.graphics.draw(moneyIcon, iconX, iconY, 0, iconHeight / moneyIcon:getHeight(), iconHeight / moneyIcon:getHeight())
+        love.graphics.setColor(textR, textG, textB, textA)
+    end
 end
 
 local function getCameraViewSize()
@@ -998,6 +1115,39 @@ local function drawPersonHoverOverlay(card)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+local function drawConsultingHoverOverlay(consultingRect)
+    if not consultingRect then
+        return
+    end
+
+    local viewportScale = Scaling.getScale()
+    if viewportScale <= 0 then
+        viewportScale = 1
+    end
+
+    local overlayX = consultingRect.x
+    local overlayY = math.max(8, consultingRect.y - CONSULTING_HOVER_HEIGHT - CONSULTING_HOVER_GAP)
+
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT)
+
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.setLineWidth(3)
+    love.graphics.rectangle("line", overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT)
+
+    love.graphics.setFont(Theme.fonts.cardBody)
+    drawConsultingPriceLine(
+        overlayX,
+        overlayY + 18,
+        consultingRect.width,
+        CONSULTING_ZONE.cost,
+        viewportScale
+    )
+
+    love.graphics.setLineWidth(1)
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
 local function drawCardWithEffects(card, options)
     options = options or {}
 
@@ -1096,14 +1246,32 @@ local function drawConsultingZone(gameX, gameY)
         viewportScale = 1
     end
 
-    local bodyColor = raised and { 0.95, 0.97, 0.9, 1 } or { 0.94, 0.94, 0.92, 1 }
-    local headerColor = raised and { 0.86, 0.92, 0.8, 1 } or { 0.9, 0.9, 0.88, 1 }
+    local bodyColor = raised and { 0.87, 0.79, 0.68, 1 } or { 0.84, 0.76, 0.66, 1 }
+    local headerColor = raised and { 0.76, 0.67, 0.58, 1 } or { 0.72, 0.63, 0.54, 1 }
 
     love.graphics.setColor(0, 0, 0, 0.12)
     love.graphics.rectangle("fill", zone.x + 2, zone.y + 2, zone.width, zone.height)
 
     love.graphics.setColor(bodyColor)
     love.graphics.rectangle("fill", zone.x, zone.y, zone.width, zone.height)
+
+    local borderInset = 2
+    local imageX = zone.x + borderInset
+    local imageY = zone.y + Card.HEADER_HEIGHT + borderInset
+    local imageWidth = zone.width - borderInset * 2
+    local imageHeight = zone.height - Card.HEADER_HEIGHT - borderInset * 2
+
+    if imageHeight > 0 then
+        love.graphics.setColor(bodyColor)
+        love.graphics.rectangle("fill", imageX, imageY, imageWidth, imageHeight)
+
+        local consultingImage = getConsultingZoneImage()
+        if consultingImage then
+            love.graphics.setColor(1, 1, 1, 1)
+            drawImageCover(consultingImage, imageX, imageY, imageWidth, imageHeight)
+        end
+    end
+
     love.graphics.setColor(headerColor)
     love.graphics.rectangle("fill", zone.x, zone.y, zone.width, Card.HEADER_HEIGHT)
 
@@ -1113,29 +1281,16 @@ local function drawConsultingZone(gameX, gameY)
     love.graphics.setLineWidth(2)
     love.graphics.line(zone.x, zone.y + Card.HEADER_HEIGHT, zone.x + zone.width, zone.y + Card.HEADER_HEIGHT)
 
-    love.graphics.setFont(Theme.fonts.uiButton)
+    love.graphics.setFont(Theme.fonts.cardHeader)
     love.graphics.printf(
-        "Consulting",
+        "Business Consulting",
         zone.x,
-        zone.y + 6,
+        zone.y + 5,
         zone.width * viewportScale,
         "center",
         0,
         1 / viewportScale,
         1 / viewportScale
-    )
-
-    love.graphics.setFont(Theme.fonts.cardBody)
-    Card.drawMoneyAmount(
-        CONSULTING_ZONE.cost,
-        zone.x,
-        zone.y + 62,
-        zone.width,
-        {
-            align = "center",
-            iconHeightFactor = 0.9,
-            fontScale = 1 / viewportScale,
-        }
     )
 
     love.graphics.setLineWidth(1)
@@ -1405,6 +1560,8 @@ function love.draw()
         local gameX, gameY = screenToGame(mouseX, mouseY)
         local worldX, worldY = gameToWorld(gameX, gameY)
         local hoveredPersonCard = getTopHoveredPersonCard(worldX, worldY)
+        local consultingRect = getConsultingRect()
+        local consultingHovered = gameX and gameY and pointInRect(gameX, gameY, consultingRect) or false
 
         love.graphics.push()
         love.graphics.scale(camera.zoom, camera.zoom)
@@ -1431,6 +1588,9 @@ function love.draw()
         love.graphics.pop()
 
         drawConsultingZone(gameX, gameY)
+        if consultingHovered then
+            drawConsultingHoverOverlay(consultingRect)
+        end
         drawNewDayButton()
 
         love.graphics.setFont(Theme.fonts.default)
