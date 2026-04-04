@@ -28,7 +28,7 @@ local CARD_HEIGHT = (Card.HEADER_HEIGHT or 34) + CARD_BODY_HEIGHT
 local STACK_OFFSET_Y = Card.HEADER_HEIGHT or 34
 local STACK_SNAP_DISTANCE = 80
 local CLICK_ATTACH_THRESHOLD = 6
-local STEVE_ICON_PATH = "assets/icons/characters/sleep.png"
+local STEVE_ICON_PATH = "assets/icons/characters/stressed.png"
 local CONSULTING_ICON_PATH = "assets/icons/characters/consulting.png"
 local MONEY_ICON_PATH = "assets/icons/Green Cash 1st Outline 256px.png"
 

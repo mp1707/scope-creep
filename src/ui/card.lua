@@ -10,6 +10,7 @@ local INDICATOR_GAP = 5
 local CARD_BODY_ASPECT_WIDTH = 300
 local CARD_BODY_ASPECT_HEIGHT = 350
 local OPPORTUNITY_BACKGROUND_SCALE = 1.1
+local PERSON_ICON_SIZE_MULTIPLIER = 2
 local MONEY_ICON_PATH = "assets/icons/Green Cash 1st Outline 256px.png"
 local FEATURE_ICON_PATH = "assets/icons/Golden Star 1st Outline 256px.png"
 local OPPORTUNITY_BACKGROUND_PATH = "assets/icons/characters/featur_booster_pack.png"
@@ -263,13 +264,16 @@ local function getBodyIconTargetSize()
     return tonumber(iconTheme.bodySize) or 74
 end
 
-local function drawIconInArea(image, areaX, areaY, areaWidth, areaHeight, targetSize)
+local function drawIconInArea(image, areaX, areaY, areaWidth, areaHeight, targetSize, options)
     if not image then
         return
     end
     if areaWidth <= 0 or areaHeight <= 0 then
         return
     end
+
+    options = options or {}
+    local flipHorizontal = options.flipHorizontal == true
 
     local iconWidth = image:getWidth()
     local iconHeight = image:getHeight()
@@ -285,7 +289,11 @@ local function drawIconInArea(image, areaX, areaY, areaWidth, areaHeight, target
     local drawY = areaY + (areaHeight - drawHeight) * 0.5
 
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(image, drawX, drawY, 0, iconScale, iconScale)
+    if flipHorizontal then
+        love.graphics.draw(image, drawX + drawWidth, drawY, 0, -iconScale, iconScale)
+    else
+        love.graphics.draw(image, drawX, drawY, 0, iconScale, iconScale)
+    end
 end
 
 local function drawOpportunityBadge(card, alpha, viewportScale, badgeFont)
@@ -507,7 +515,15 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
         if portraitImage then
             local bodyTop = self.y + Card.HEADER_HEIGHT
             local bodyHeight = self.height - Card.HEADER_HEIGHT
-            drawImageCover(portraitImage, self.x, bodyTop, self.width, bodyHeight, 1)
+            drawIconInArea(
+                portraitImage,
+                self.x,
+                bodyTop + 4,
+                self.width,
+                math.max(1, bodyHeight - 8),
+                getBodyIconTargetSize() * PERSON_ICON_SIZE_MULTIPLIER,
+                { flipHorizontal = true }
+            )
         end
         return
     end
