@@ -33,6 +33,9 @@ local STEVE_ICON_PATH = "assets/icons/characters/sleep.png"
 local WORK_CYCLE_SECONDS = 3
 local WORK_BAR_HEIGHT = 14
 local OPPORTUNITY_CLICK_LIMIT = 3
+local OPPORTUNITY_WOBBLE_DURATION = 0.18
+local OPPORTUNITY_WOBBLE_AMPLITUDE = 0.05
+local OPPORTUNITY_WOBBLE_CYCLES = 2.4
 local PERSON_HOVER_HEIGHT = 58
 local PERSON_HOVER_GAP = 14
 local PERSON_HOVER_INDICATOR_SIZE = 16
@@ -475,36 +478,42 @@ local function drawDragStackShadow()
         return
     end
 
-    local root = dragRootCard or draggingCards[1]
-    if not root then
-        return
-    end
-
     local minX = math.huge
     local minY = math.huge
     local maxX = -math.huge
     local maxY = -math.huge
+    local shadowSource = nil
 
     for _, card in ipairs(draggingCards) do
-        local centerX = card.x + card.width * 0.5
-        local centerY = card.y + card.height * 0.5
-        local halfW = card.width * card.scale * 0.5
-        local halfH = card.height * card.scale * 0.5
-        local left = centerX - halfW
-        local top = centerY - halfH
-        local right = centerX + halfW
-        local bottom = centerY + halfH
+        if card.cardType ~= "opportunity" then
+            if not shadowSource then
+                shadowSource = card
+            end
 
-        if left < minX then minX = left end
-        if top < minY then minY = top end
-        if right > maxX then maxX = right end
-        if bottom > maxY then maxY = bottom end
+            local centerX = card.x + card.width * 0.5
+            local centerY = card.y + card.height * 0.5
+            local halfW = card.width * card.scale * 0.5
+            local halfH = card.height * card.scale * 0.5
+            local left = centerX - halfW
+            local top = centerY - halfH
+            local right = centerX + halfW
+            local bottom = centerY + halfH
+
+            if left < minX then minX = left end
+            if top < minY then minY = top end
+            if right > maxX then maxX = right end
+            if bottom > maxY then maxY = bottom end
+        end
     end
 
-    local shadowExpand = root.shadowExpand or 0
-    local shadowOffsetX = root.shadowOffsetX or 0
-    local shadowOffsetY = root.shadowOffsetY or 0
-    local shadowAlpha = root.shadowAlpha or 0.12
+    if not shadowSource then
+        return
+    end
+
+    local shadowExpand = shadowSource.shadowExpand or 0
+    local shadowOffsetX = shadowSource.shadowOffsetX or 0
+    local shadowOffsetY = shadowSource.shadowOffsetY or 0
+    local shadowAlpha = shadowSource.shadowAlpha or 0.12
 
     love.graphics.setColor(0, 0, 0, shadowAlpha)
     love.graphics.rectangle(
@@ -740,6 +749,19 @@ createSideBounceMotion = function(startX, startY, endX, endY, config)
     return motion
 end
 
+local function triggerOpportunityWobble(opportunityCard)
+    if not opportunityCard then
+        return
+    end
+
+    opportunityCard.clickWobble = {
+        elapsed = 0,
+        duration = OPPORTUNITY_WOBBLE_DURATION,
+        amplitude = OPPORTUNITY_WOBBLE_AMPLITUDE,
+        cycles = OPPORTUNITY_WOBBLE_CYCLES,
+    }
+end
+
 local function updatePhysicalCardMotions(dt)
     for _, card in ipairs(cards) do
         local motion = card.motionState
@@ -822,7 +844,24 @@ local function updatePhysicalCardMotions(dt)
             card.targetY = card.y
             card.renderAlpha = 1
         else
-            card.rotation = damp(card.rotation or 0, 0, 12, dt)
+            local targetRotation = 0
+            local wobble = card.clickWobble
+            if wobble then
+                wobble.elapsed = (wobble.elapsed or 0) + dt
+                local duration = math.max(0.001, wobble.duration or OPPORTUNITY_WOBBLE_DURATION)
+                local t = clamp((wobble.elapsed or 0) / duration, 0, 1)
+                local fade = (1 - t) * (1 - t)
+                local cycles = wobble.cycles or OPPORTUNITY_WOBBLE_CYCLES
+                local wave = math.sin(t * math.pi * 2 * cycles)
+                targetRotation = wave * (wobble.amplitude or OPPORTUNITY_WOBBLE_AMPLITUDE) * fade
+
+                if t >= 1 then
+                    card.clickWobble = nil
+                    targetRotation = 0
+                end
+            end
+
+            card.rotation = damp(card.rotation or 0, targetRotation, 18, dt)
             card.renderAlpha = 1
         end
     end
@@ -1176,6 +1215,8 @@ local function triggerOpportunityClick(opportunityCard)
         return
     end
 
+    triggerOpportunityWobble(opportunityCard)
+
     local originX = clamp(opportunityCard.x, 0, WORLD_WIDTH - CARD_WIDTH)
     local originY = clamp(opportunityCard.y, 0, WORLD_HEIGHT - CARD_HEIGHT)
 
@@ -1383,7 +1424,7 @@ function love.draw()
 
         for _, card in ipairs(cards) do
             if isCardDragging(card) then
-                drawCardWithEffects(card, { skipShadow = true })
+                drawCardWithEffects(card, { skipShadow = card.cardType ~= "opportunity" })
             end
         end
 

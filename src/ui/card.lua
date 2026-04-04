@@ -9,16 +9,17 @@ local INDICATOR_SIZE = 16
 local INDICATOR_GAP = 5
 local CARD_BODY_ASPECT_WIDTH = 300
 local CARD_BODY_ASPECT_HEIGHT = 350
+local OPPORTUNITY_BACKGROUND_SCALE = 1.1
 local MONEY_ICON_PATH = "assets/icons/Green Cash 1st Outline 256px.png"
 local FEATURE_ICON_PATH = "assets/icons/Golden Star 1st Outline 256px.png"
-local OPPORTUNITY_ICON_PATH = "assets/icons/Box 1st Outline 256px.png"
+local OPPORTUNITY_BACKGROUND_PATH = "assets/icons/characters/featur_booster_pack.png"
 
 local moneyIconImage = nil
 local moneyIconLoadAttempted = false
 local featureIconImage = nil
 local featureIconLoadAttempted = false
-local opportunityIconImage = nil
-local opportunityIconLoadAttempted = false
+local opportunityBackgroundImage = nil
+local opportunityBackgroundLoadAttempted = false
 local cardIconImageCache = {}
 local cardIconLoadAttempted = {}
 local coverQuadCache = setmetatable({}, { __mode = "k" })
@@ -96,21 +97,21 @@ local function getMoneyIconImage()
     return moneyIconImage
 end
 
-local function getOpportunityIconImage()
-    if opportunityIconImage or opportunityIconLoadAttempted then
-        return opportunityIconImage
+local function getOpportunityBackgroundImage()
+    if opportunityBackgroundImage or opportunityBackgroundLoadAttempted then
+        return opportunityBackgroundImage
     end
 
-    opportunityIconLoadAttempted = true
+    opportunityBackgroundLoadAttempted = true
 
-    local ok, loadedImage = pcall(love.graphics.newImage, OPPORTUNITY_ICON_PATH)
+    local ok, loadedImage = pcall(love.graphics.newImage, OPPORTUNITY_BACKGROUND_PATH)
     if not ok then
         return nil
     end
 
     loadedImage:setFilter("linear", "linear")
-    opportunityIconImage = loadedImage
-    return opportunityIconImage
+    opportunityBackgroundImage = loadedImage
+    return opportunityBackgroundImage
 end
 
 local function getFeatureIconImage()
@@ -151,7 +152,7 @@ local function getCardIconImage(iconPath)
     return loadedImage
 end
 
-local function drawImageCover(image, x, y, width, height, alpha)
+local function drawImageCover(image, x, y, width, height, alpha, tintR, tintG, tintB)
     local imageWidth = image:getWidth()
     local imageHeight = image:getHeight()
     if imageWidth <= 0 or imageHeight <= 0 or width <= 0 or height <= 0 then
@@ -171,7 +172,7 @@ local function drawImageCover(image, x, y, width, height, alpha)
     end
     quad:setViewport(sourceX, sourceY, sourceWidth, sourceHeight, imageWidth, imageHeight)
 
-    love.graphics.setColor(1, 1, 1, alpha or 1)
+    love.graphics.setColor(tintR or 1, tintG or 1, tintB or 1, alpha or 1)
     love.graphics.draw(
         image,
         quad,
@@ -181,6 +182,14 @@ local function drawImageCover(image, x, y, width, height, alpha)
         width / sourceWidth,
         height / sourceHeight
     )
+end
+
+local function getOpportunityBackgroundRect(card)
+    local drawWidth = card.width * OPPORTUNITY_BACKGROUND_SCALE
+    local drawHeight = card.height * OPPORTUNITY_BACKGROUND_SCALE
+    local drawX = card.x - (drawWidth - card.width) * 0.5
+    local drawY = card.y - (drawHeight - card.height) * 0.5
+    return drawX, drawY, drawWidth, drawHeight
 end
 
 local function drawMoneyAmountWithIcon(amount, x, y, width, options)
@@ -504,9 +513,10 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
     end
 
     if self.cardType == "opportunity" then
-        local opportunityIcon = getOpportunityIconImage()
-        if not opportunityIcon then
-            return
+        local opportunityBackground = getOpportunityBackgroundImage()
+        if opportunityBackground then
+            local drawX, drawY, drawWidth, drawHeight = getOpportunityBackgroundRect(self)
+            drawImageCover(opportunityBackground, drawX, drawY, drawWidth, drawHeight, 1)
         end
 
         if headerFont then
@@ -515,10 +525,21 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
             love.graphics.setFont(bodyFont)
         end
 
+        local font = love.graphics.getFont()
+        local lineHeight = font:getHeight() / viewportScale
+        local verticalGap = math.max(4, lineHeight * 0.22)
+        local iconSize = getBodyIconTargetSize()
+        local totalHeight = lineHeight + verticalGap + iconSize + verticalGap + lineHeight
+        local startY = self.y + (self.height - totalHeight) * 0.5
+        local featureTextY = startY
+        local iconY = featureTextY + lineHeight + verticalGap
+        local ideasTextY = iconY + iconSize + verticalGap
+
+        love.graphics.setColor(textColor)
         love.graphics.printf(
-            "Feature\nIdeas",
+            "Feature",
             self.x + 12,
-            self.y + 14,
+            featureTextY,
             (self.width - 24) * viewportScale,
             "center",
             0,
@@ -526,25 +547,23 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
             1 / viewportScale
         )
 
-        local topTextY = self.y + 14
-        local topTextLineHeight = love.graphics.getFont():getHeight() / viewportScale
-        local topTextBottom = topTextY + topTextLineHeight * 2
-        local bottomTextY = self.y + self.height - 34
-        local iconAreaX = self.x + 18
-        local iconAreaY = topTextBottom + 6
-        local iconAreaWidth = self.width - 36
-        local iconAreaHeight = math.max(1, bottomTextY - iconAreaY - 2)
-        drawIconInArea(opportunityIcon, iconAreaX, iconAreaY, iconAreaWidth, iconAreaHeight, getBodyIconTargetSize())
-
-        if bodyFont then
-            love.graphics.setFont(bodyFont)
+        local featureIcon = getFeatureIconImage()
+        if featureIcon then
+            drawIconInArea(
+                featureIcon,
+                self.x + (self.width - iconSize) * 0.5,
+                iconY,
+                iconSize,
+                iconSize,
+                iconSize
+            )
         end
 
         love.graphics.setColor(textColor)
         love.graphics.printf(
-            "Booster Pack",
+            "Ideas",
             self.x + 12,
-            bottomTextY,
+            ideasTextY,
             (self.width - 24) * viewportScale,
             "center",
             0,
@@ -655,6 +674,44 @@ function Card:drawIndicators(alpha)
     end
 end
 
+function Card:drawShadow(alpha)
+    local effectiveAlpha = (self.shadowAlpha or 0.12) * (alpha or 1)
+
+    if self.cardType == "opportunity" then
+        local backgroundImage = getOpportunityBackgroundImage()
+        if not backgroundImage then
+            return
+        end
+
+        local drawX, drawY, drawWidth, drawHeight = getOpportunityBackgroundRect(self)
+        local shadowExpand = self.shadowExpand or 0
+        local shadowOffsetX = self.shadowOffsetX or 0
+        local shadowOffsetY = self.shadowOffsetY or 0
+
+        drawImageCover(
+            backgroundImage,
+            drawX - shadowExpand * 0.5 + shadowOffsetX,
+            drawY - shadowExpand * 0.5 + shadowOffsetY,
+            drawWidth + shadowExpand,
+            drawHeight + shadowExpand,
+            effectiveAlpha,
+            0,
+            0,
+            0
+        )
+        return
+    end
+
+    love.graphics.setColor(0, 0, 0, effectiveAlpha)
+    love.graphics.rectangle(
+        "fill",
+        self.x - self.shadowExpand * 0.5 + self.shadowOffsetX,
+        self.y - self.shadowExpand * 0.5 + self.shadowOffsetY,
+        self.width + self.shadowExpand,
+        self.height + self.shadowExpand
+    )
+end
+
 function Card:draw(headerFont, options)
     options = options or {}
 
@@ -667,6 +724,7 @@ function Card:draw(headerFont, options)
     local centerY = self.y + self.height * 0.5
     local drawScale = self.scale * extraScale
     local drawRotation = self.rotation or 0
+    local isOpportunity = self.cardType == "opportunity"
 
     love.graphics.push()
     love.graphics.translate(centerX, centerY)
@@ -675,34 +733,31 @@ function Card:draw(headerFont, options)
     love.graphics.translate(-centerX, -centerY)
 
     if not options.skipShadow then
-        love.graphics.setColor(0, 0, 0, self.shadowAlpha * alpha)
-        love.graphics.rectangle(
-            "fill",
-            self.x - self.shadowExpand * 0.5 + self.shadowOffsetX,
-            self.y - self.shadowExpand * 0.5 + self.shadowOffsetY,
-            self.width + self.shadowExpand,
-            self.height + self.shadowExpand
-        )
+        self:drawShadow(alpha)
     end
 
-    local bodyColor = self:getStyleColor("bodyColor")
-    local headerColor = self:getStyleColor("headerColor")
     local borderColor = self:getStyleColor("borderColor")
     local textColor = self:getStyleColor("textColor")
+    local bodyColor = self:getStyleColor("bodyColor")
+    local headerColor = self:getStyleColor("headerColor")
 
-    love.graphics.setColor(applyAlpha(bodyColor, alpha))
-    love.graphics.rectangle("fill", self.x, self.y, self.width, self.height)
+    if not isOpportunity then
+        love.graphics.setColor(applyAlpha(bodyColor, alpha))
+        love.graphics.rectangle("fill", self.x, self.y, self.width, self.height)
+    end
 
-    local showHeader = self.cardType ~= "opportunity"
+    local showHeader = not isOpportunity
     local headerHeight = showHeader and Card.HEADER_HEIGHT or 0
     if showHeader then
         love.graphics.setColor(applyAlpha(headerColor, alpha))
         love.graphics.rectangle("fill", self.x, self.y, self.width, headerHeight)
     end
 
-    love.graphics.setColor(applyAlpha(borderColor, alpha))
-    love.graphics.setLineWidth(3)
-    love.graphics.rectangle("line", self.x, self.y, self.width, self.height)
+    if not isOpportunity then
+        love.graphics.setColor(applyAlpha(borderColor, alpha))
+        love.graphics.setLineWidth(3)
+        love.graphics.rectangle("line", self.x, self.y, self.width, self.height)
+    end
 
     if headerFont then
         love.graphics.setFont(headerFont)
