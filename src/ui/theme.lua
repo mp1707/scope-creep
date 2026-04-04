@@ -7,6 +7,15 @@ Theme.colors = {
 
 Theme.fonts = {}
 Theme.fontScale = nil
+Theme.card = {
+    icon = {
+        bodySize = 60,
+    },
+    feature = {
+        valuePadding = 8,
+        indicatorPadding = 8,
+    },
+}
 
 local FONT_DEFS = {
     default = { path = "assets/fonts/PatrickHand-Regular.ttf", size = 32 },

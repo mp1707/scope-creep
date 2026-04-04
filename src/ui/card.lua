@@ -1,4 +1,5 @@
 local Scaling = require("src.core.scaling")
+local Theme = require("src.ui.theme")
 
 local Card = {}
 Card.__index = Card
@@ -9,10 +10,13 @@ local INDICATOR_GAP = 5
 local CARD_BODY_ASPECT_WIDTH = 300
 local CARD_BODY_ASPECT_HEIGHT = 350
 local MONEY_ICON_PATH = "assets/icons/Green Cash 1st Outline 256px.png"
-local OPPORTUNITY_ICON_PATH = "assets/icons/Golden Star 1st Outline 256px.png"
+local FEATURE_ICON_PATH = "assets/icons/Golden Star 1st Outline 256px.png"
+local OPPORTUNITY_ICON_PATH = "assets/icons/Box 1st Outline 256px.png"
 
 local moneyIconImage = nil
 local moneyIconLoadAttempted = false
+local featureIconImage = nil
+local featureIconLoadAttempted = false
 local opportunityIconImage = nil
 local opportunityIconLoadAttempted = false
 local cardIconImageCache = {}
@@ -29,7 +33,7 @@ local DEFAULT_STYLES = {
         indicatorEmpty = { 0.79, 0.82, 0.86, 1 },
     },
     feature = {
-        bodyColor = { 1, 1, 1, 1 },
+        bodyColor = { 0.98, 0.95, 0.86, 1 },
         headerColor = { 0.93, 0.82, 0.33, 1 },
         borderColor = { 0, 0, 0, 1 },
         textColor = { 0, 0, 0, 1 },
@@ -109,6 +113,23 @@ local function getOpportunityIconImage()
     return opportunityIconImage
 end
 
+local function getFeatureIconImage()
+    if featureIconImage or featureIconLoadAttempted then
+        return featureIconImage
+    end
+
+    featureIconLoadAttempted = true
+
+    local ok, loadedImage = pcall(love.graphics.newImage, FEATURE_ICON_PATH)
+    if not ok then
+        return nil
+    end
+
+    loadedImage:setFilter("linear", "linear")
+    featureIconImage = loadedImage
+    return featureIconImage
+end
+
 local function getCardIconImage(iconPath)
     if not iconPath or iconPath == "" then
         return nil
@@ -174,6 +195,7 @@ local function drawMoneyAmountWithIcon(amount, x, y, width, options)
     end
 
     local align = options.align or "left"
+    local iconVerticalAlign = options.iconVerticalAlign or "center"
     local iconHeightFactor = options.iconHeightFactor or 0.9
 
     local font = love.graphics.getFont()
@@ -213,6 +235,9 @@ local function drawMoneyAmountWithIcon(amount, x, y, width, options)
         local drawScale = iconHeight / rawHeight
         local iconX = drawX + textWidth + gap
         local iconY = y + (textHeight - iconHeight) * 0.5
+        if iconVerticalAlign == "bottom" then
+            iconY = y + textHeight - iconHeight
+        end
         love.graphics.setColor(1, 1, 1, textA or 1)
         love.graphics.draw(moneyIcon, iconX, iconY, 0, drawScale, drawScale)
         love.graphics.setColor(textR, textG, textB, textA)
@@ -221,6 +246,37 @@ end
 
 function Card.drawMoneyAmount(amount, x, y, width, options)
     drawMoneyAmountWithIcon(amount, x, y, width, options)
+end
+
+local function getBodyIconTargetSize()
+    local cardTheme = Theme.card or {}
+    local iconTheme = cardTheme.icon or {}
+    return tonumber(iconTheme.bodySize) or 74
+end
+
+local function drawIconInArea(image, areaX, areaY, areaWidth, areaHeight, targetSize)
+    if not image then
+        return
+    end
+    if areaWidth <= 0 or areaHeight <= 0 then
+        return
+    end
+
+    local iconWidth = image:getWidth()
+    local iconHeight = image:getHeight()
+    if iconWidth <= 0 or iconHeight <= 0 then
+        return
+    end
+
+    local fittedTargetSize = math.max(1, math.min(targetSize, areaWidth, areaHeight))
+    local iconScale = math.min(fittedTargetSize / iconWidth, fittedTargetSize / iconHeight)
+    local drawWidth = iconWidth * iconScale
+    local drawHeight = iconHeight * iconScale
+    local drawX = areaX + (areaWidth - drawWidth) * 0.5
+    local drawY = areaY + (areaHeight - drawHeight) * 0.5
+
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(image, drawX, drawY, 0, iconScale, iconScale)
 end
 
 local function drawOpportunityBadge(card, alpha, viewportScale, badgeFont)
@@ -470,25 +526,15 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
             1 / viewportScale
         )
 
-        local referenceBodyHeight = self.height - Card.HEADER_HEIGHT
-        local maxIconWidth = self.width - 36
-        local maxIconHeight = referenceBodyHeight - 28
-
-        local iconWidth = opportunityIcon:getWidth()
-        local iconHeight = opportunityIcon:getHeight()
-        local iconScale = math.min(maxIconWidth / iconWidth, maxIconHeight / iconHeight) * 0.6
-        local drawWidth = iconWidth * iconScale
-        local drawHeight = iconHeight * iconScale
-        local drawX = self.x + (self.width - drawWidth) * 0.5
         local topTextY = self.y + 14
         local topTextLineHeight = love.graphics.getFont():getHeight() / viewportScale
         local topTextBottom = topTextY + topTextLineHeight * 2
         local bottomTextY = self.y + self.height - 34
-        local iconCenterY = (topTextBottom + bottomTextY) * 0.5
-        local drawY = iconCenterY - drawHeight * 0.5
-
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(opportunityIcon, drawX, drawY, 0, iconScale, iconScale)
+        local iconAreaX = self.x + 18
+        local iconAreaY = topTextBottom + 6
+        local iconAreaWidth = self.width - 36
+        local iconAreaHeight = math.max(1, bottomTextY - iconAreaY - 2)
+        drawIconInArea(opportunityIcon, iconAreaX, iconAreaY, iconAreaWidth, iconAreaHeight, getBodyIconTargetSize())
 
         if bodyFont then
             love.graphics.setFont(bodyFont)
@@ -515,19 +561,37 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
             love.graphics.setFont(bodyFont)
         end
 
+        local featureTheme = (Theme.card or {}).feature or {}
+        local valuePadding = tonumber(featureTheme.valuePadding) or 8
+        local indicatorPadding = tonumber(featureTheme.indicatorPadding) or 8
+        local bodyTop = self.y + Card.HEADER_HEIGHT
+        local bodyBottom = self.y + self.height
         local font = love.graphics.getFont()
         local textHeight = font:getHeight() / viewportScale
-        local textY = self.y + (self.height - textHeight) * 0.52
+        local moneyY = bodyBottom - textHeight - valuePadding + 2
 
+        local featureIcon = getFeatureIconImage()
+        if featureIcon then
+            local iconTop = bodyTop + indicatorPadding + INDICATOR_SIZE + 8
+            local iconBottom = moneyY - 10
+            local iconAreaX = self.x + 18
+            local iconAreaY = iconTop
+            local iconAreaWidth = self.width - 36
+            local iconAreaHeight = math.max(1, iconBottom - iconTop)
+            drawIconInArea(featureIcon, iconAreaX, iconAreaY, iconAreaWidth, iconAreaHeight, getBodyIconTargetSize())
+        end
+
+        love.graphics.setColor(textColor)
         drawMoneyAmountWithIcon(
             self.value or 0,
-            self.x + 8,
-            textY,
-            self.width - 16,
+            self.x + valuePadding,
+            moneyY,
+            self.width - (valuePadding * 2),
             {
-                align = "center",
+                align = "right",
                 fontScale = 1 / viewportScale,
                 iconHeightFactor = 0.9,
+                iconVerticalAlign = "bottom",
             }
         )
         return
@@ -542,20 +606,11 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
         local headerHeight = Card.HEADER_HEIGHT
         local bodyTop = self.y + headerHeight
         local bodyHeight = self.height - headerHeight
-        local maxIconWidth = self.width - 36
-        local maxIconHeight = bodyHeight - 28
-
-        local iconWidth = moneyIcon:getWidth()
-        local iconHeight = moneyIcon:getHeight()
-        local iconScale = math.min(maxIconWidth / iconWidth, maxIconHeight / iconHeight) * 0.6
-        local drawWidth = iconWidth * iconScale
-        local drawHeight = iconHeight * iconScale
-
-        local drawX = self.x + (self.width - drawWidth) * 0.5
-        local drawY = bodyTop + (bodyHeight - drawHeight) * 0.5
-
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(moneyIcon, drawX, drawY, 0, iconScale, iconScale)
+        local iconAreaX = self.x + 18
+        local iconAreaY = bodyTop + 14
+        local iconAreaWidth = self.width - 36
+        local iconAreaHeight = math.max(1, bodyHeight - 28)
+        drawIconInArea(moneyIcon, iconAreaX, iconAreaY, iconAreaWidth, iconAreaHeight, getBodyIconTargetSize())
     end
 end
 
@@ -578,8 +633,10 @@ function Card:drawIndicators(alpha)
     end
 
     local drawTotal = math.min(total, 8)
-    local startX = self.x + 10
-    local startY = self.y + self.height - INDICATOR_SIZE - 8
+    local featureTheme = (Theme.card or {}).feature or {}
+    local indicatorPadding = tonumber(featureTheme.indicatorPadding) or 8
+    local startX = self.x + indicatorPadding
+    local startY = self.y + Card.HEADER_HEIGHT + indicatorPadding
 
     local fillColor = self:getStyleColor("indicatorFill")
     local emptyColor = self:getStyleColor("indicatorEmpty")
