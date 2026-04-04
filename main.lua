@@ -2,6 +2,7 @@ local HotReload = require("src.core.hot_reload")
 local Scaling = require("src.core.scaling")
 local Theme = require("src.ui.theme")
 local Card = require("src.ui.card")
+local BoosterPack = require("src.ui.booster_pack")
 
 local APP_WIDTH = 1920
 local APP_HEIGHT = 1080
@@ -17,15 +18,18 @@ local state = {
 }
 
 local GRID_SIZE = 30
-local GRID_COLOR = { 0.84, 0.86, 0.8, 0.32 }
+local GRID_COLOR = Theme.colors.gridLine
 
 local CARD_BODY_ASPECT_WIDTH = 300
 local CARD_BODY_ASPECT_HEIGHT = 350
 local CARD_WIDTH = 150
 local CARD_BODY_HEIGHT = math.floor((CARD_WIDTH * CARD_BODY_ASPECT_HEIGHT / CARD_BODY_ASPECT_WIDTH) + 0.5)
 local CARD_HEIGHT = (Card.HEADER_HEIGHT or 34) + CARD_BODY_HEIGHT
+local BOOSTER_PACK_IMAGE_ASPECT = 400 / 500
+local BOOSTER_PACK_HEIGHT = math.floor(CARD_HEIGHT * 1.089 + 0.5)
+local BOOSTER_PACK_WIDTH = math.floor(BOOSTER_PACK_HEIGHT * BOOSTER_PACK_IMAGE_ASPECT + 0.5)
 
-local STACK_OFFSET_Y = Card.HEADER_HEIGHT or 34
+local STACK_OFFSET_Y = (Card.HEADER_HEIGHT or 34) - 3
 local STACK_SNAP_DISTANCE = 80
 local CLICK_ATTACH_THRESHOLD = 6
 local STEVE_ICON_PATH = "assets/icons/characters/stressed.png"
@@ -34,14 +38,16 @@ local MONEY_ICON_PATH = "assets/icons/Green Cash 1st Outline 256px.png"
 
 local WORK_CYCLE_SECONDS = 3
 local WORK_BAR_HEIGHT = 14
+local WORK_BAR_RADIUS = 8
 local OPPORTUNITY_CLICK_LIMIT = 3
 local OPPORTUNITY_WOBBLE_DURATION = 0.18
 local OPPORTUNITY_WOBBLE_AMPLITUDE = 0.05
 local OPPORTUNITY_WOBBLE_CYCLES = 2.4
-local PERSON_HOVER_HEIGHT = 58
+local PERSON_HOVER_MIN_HEIGHT = 32
 local PERSON_HOVER_GAP = 14
-local PERSON_HOVER_INDICATOR_SIZE = 16
-local PERSON_HOVER_INDICATOR_GAP = 5
+local PERSON_HOVER_RADIUS = 8
+local PERSON_HOVER_PADDING_X = 10
+local PERSON_HOVER_PADDING_Y = 8
 local CONSULTING_HOVER_HEIGHT = 58
 local CONSULTING_HOVER_GAP = 14
 
@@ -515,8 +521,8 @@ local function applyStackSnap(cardToSnap, excludedCards)
     end
 
     cardToSnap.stackParentId = target.parent.id
-    cardToSnap.targetX = clamp(target.x, 0, WORLD_WIDTH - CARD_WIDTH)
-    cardToSnap.targetY = clamp(target.y, 0, WORLD_HEIGHT - CARD_HEIGHT)
+    cardToSnap.targetX = clamp(target.x, 0, WORLD_WIDTH - (cardToSnap.width or CARD_WIDTH))
+    cardToSnap.targetY = clamp(target.y, 0, WORLD_HEIGHT - (cardToSnap.height or CARD_HEIGHT))
     return true
 end
 
@@ -580,8 +586,8 @@ local function endDragSelection()
     if snapDeltaX ~= 0 or snapDeltaY ~= 0 then
         for _, card in ipairs(draggingCards) do
             if card ~= rootCard then
-                card.targetX = clamp(card.targetX + snapDeltaX, 0, WORLD_WIDTH - CARD_WIDTH)
-                card.targetY = clamp(card.targetY + snapDeltaY, 0, WORLD_HEIGHT - CARD_HEIGHT)
+                card.targetX = clamp(card.targetX + snapDeltaX, 0, WORLD_WIDTH - (card.width or CARD_WIDTH))
+                card.targetY = clamp(card.targetY + snapDeltaY, 0, WORLD_HEIGHT - (card.height or CARD_HEIGHT))
             end
         end
     end
@@ -630,9 +636,10 @@ local function drawDragStackShadow()
     local shadowExpand = shadowSource.shadowExpand or 0
     local shadowOffsetX = shadowSource.shadowOffsetX or 0
     local shadowOffsetY = shadowSource.shadowOffsetY or 0
-    local shadowAlpha = shadowSource.shadowAlpha or 0.12
+    local shadowAlpha = shadowSource.shadowAlpha or 0.11
 
-    love.graphics.setColor(0, 0, 0, shadowAlpha)
+    local shadowColor = Theme.colors.cardShadow
+    love.graphics.setColor(shadowColor[1], shadowColor[2], shadowColor[3], shadowAlpha)
     love.graphics.rectangle(
         "fill",
         minX - shadowExpand * 0.5 + shadowOffsetX,
@@ -684,6 +691,30 @@ local function createCard(config)
     })
 end
 
+local function createBoosterPack(config)
+    return BoosterPack.new({
+        id = config.id or allocateCardId(),
+        title = config.title,
+        effect = config.effect,
+        insightsRemaining = config.insightsRemaining,
+        width = BOOSTER_PACK_WIDTH,
+        height = BOOSTER_PACK_HEIGHT,
+        worldWidth = WORLD_WIDTH,
+        worldHeight = WORLD_HEIGHT,
+        x = config.x,
+        y = config.y,
+        targetX = config.targetX,
+        targetY = config.targetY,
+    })
+end
+
+local function createBoardObject(config)
+    if config.objectType == "booster_pack" or config.cardType == "opportunity" then
+        return createBoosterPack(config)
+    end
+    return createCard(config)
+end
+
 local function createDefaultCards()
     local centeredX = (WORLD_WIDTH - CARD_WIDTH) * 0.5
     local centeredY = (WORLD_HEIGHT - CARD_HEIGHT) * 0.5
@@ -725,7 +756,7 @@ local function restoreCardsFromSnapshot(cardSnapshots)
     local maxId = 0
 
     for _, snapshot in ipairs(cardSnapshots) do
-        local restored = createCard(snapshot)
+        local restored = createBoardObject(snapshot)
         table.insert(restoredCards, restored)
         if restored.id and restored.id > maxId then
             maxId = restored.id
@@ -887,7 +918,7 @@ local function updatePhysicalCardMotions(dt)
             card.targetScale = 1
             card.targetShadowOffsetX = 4
             card.targetShadowOffsetY = 4
-            card.targetShadowAlpha = 0.12
+            card.targetShadowAlpha = 0.11
             card.targetShadowExpand = 0
 
             if motion.kind ~= "sideBounce" then
@@ -955,8 +986,8 @@ local function updatePhysicalCardMotions(dt)
             local tiltWave = math.sin(progress * math.pi) * (motion.tilt or 0.11) * direction
             card.rotation = damp(card.rotation or 0, tiltWave, 10, dt)
 
-            card.x = clamp(card.x, 0, WORLD_WIDTH - CARD_WIDTH)
-            card.y = clamp(card.y, 0, WORLD_HEIGHT - CARD_HEIGHT)
+            card.x = clamp(card.x, 0, WORLD_WIDTH - (card.width or CARD_WIDTH))
+            card.y = clamp(card.y, 0, WORLD_HEIGHT - (card.height or CARD_HEIGHT))
             card.targetX = card.x
             card.targetY = card.y
             card.renderAlpha = 1
@@ -989,8 +1020,8 @@ local function updateAttachedCardTargets()
         if card.stackParentId and not card:isDragging() and not card.motionState then
             local parent = getCardById(card.stackParentId)
             if parent then
-                card.targetX = clamp(parent.targetX, 0, WORLD_WIDTH - CARD_WIDTH)
-                card.targetY = clamp(parent.targetY + STACK_OFFSET_Y, 0, WORLD_HEIGHT - CARD_HEIGHT)
+                card.targetX = clamp(parent.targetX, 0, WORLD_WIDTH - (card.width or CARD_WIDTH))
+                card.targetY = clamp(parent.targetY + STACK_OFFSET_Y, 0, WORLD_HEIGHT - (card.height or CARD_HEIGHT))
             else
                 card.stackParentId = nil
             end
@@ -999,6 +1030,8 @@ local function updateAttachedCardTargets()
 end
 
 local function drawWorkBars()
+    local workBarColors = Theme.colors.workBar
+    local barRadius = math.min(WORK_BAR_RADIUS, WORK_BAR_HEIGHT * 0.5)
     for _, workerCard in ipairs(cards) do
         if workerCard.cardType == "person" then
             local activeFeature = getDirectChildOfType(workerCard, "feature")
@@ -1010,21 +1043,28 @@ local function drawWorkBars()
                 local progress = clamp((workerCard.workProgress or 0) / WORK_CYCLE_SECONDS, 0, 1)
                 local innerPadding = 3
 
-                love.graphics.setColor(1, 1, 1, 1)
-                love.graphics.rectangle("fill", barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT)
+                love.graphics.setColor(workBarColors.track)
+                love.graphics.rectangle("fill", barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, barRadius, barRadius)
 
-                love.graphics.setColor(0, 0, 0, 1)
+                love.graphics.setColor(workBarColors.border)
                 love.graphics.setLineWidth(3)
-                love.graphics.rectangle("line", barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT)
+                love.graphics.rectangle("line", barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, barRadius, barRadius)
 
-                love.graphics.setColor(0, 0, 0, 1)
-                love.graphics.rectangle(
-                    "fill",
-                    barX + innerPadding,
-                    barY + innerPadding,
-                    (CARD_WIDTH - innerPadding * 2) * progress,
-                    WORK_BAR_HEIGHT - innerPadding * 2
-                )
+                local progressWidth = (CARD_WIDTH - innerPadding * 2) * progress
+                if progressWidth > 0 then
+                    local innerHeight = WORK_BAR_HEIGHT - innerPadding * 2
+                    local innerRadius = math.max(0, math.min(barRadius - innerPadding, innerHeight * 0.5, progressWidth * 0.5))
+                    love.graphics.setColor(workBarColors.fill)
+                    love.graphics.rectangle(
+                        "fill",
+                        barX + innerPadding,
+                        barY + innerPadding,
+                        progressWidth,
+                        innerHeight,
+                        innerRadius,
+                        innerRadius
+                    )
+                end
             end
         end
     end
@@ -1069,47 +1109,42 @@ local function drawPersonHoverOverlay(card)
         viewportScale = 1
     end
 
-    local overlayX = card.x
-    local overlayY = math.max(8, card.y - PERSON_HOVER_HEIGHT - PERSON_HOVER_GAP)
-
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.rectangle("fill", overlayX, overlayY, card.width, PERSON_HOVER_HEIGHT)
-
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.setLineWidth(3)
-    love.graphics.rectangle("line", overlayX, overlayY, card.width, PERSON_HOVER_HEIGHT)
-
     love.graphics.setFont(Theme.fonts.cardBody)
+    local effectText = getPersonEffectText(card)
+    local font = love.graphics.getFont()
+    local textScale = 1 / viewportScale
+    local textMaxWidth = math.max(1, card.width - PERSON_HOVER_PADDING_X * 2)
+    local textWrapWidth = textMaxWidth * viewportScale
+    local _, wrappedLines = font:getWrap(effectText, textWrapWidth)
+    local lineCount = math.max(1, #wrappedLines)
+    local textHeight = lineCount * font:getHeight() * textScale
+    local overlayHeight = math.max(PERSON_HOVER_MIN_HEIGHT, PERSON_HOVER_PADDING_Y * 2 + textHeight)
+
+    local hoverColors = Theme.colors.personHover
+    local overlayX = card.x
+    local overlayY = math.max(8, card.y - overlayHeight - PERSON_HOVER_GAP)
+    local textY = overlayY + math.max(PERSON_HOVER_PADDING_Y, (overlayHeight - textHeight) * 0.5)
+
+    love.graphics.setColor(hoverColors.fill)
+    love.graphics.rectangle("fill", overlayX, overlayY, card.width, overlayHeight, PERSON_HOVER_RADIUS,
+        PERSON_HOVER_RADIUS)
+
+    love.graphics.setColor(hoverColors.border)
+    love.graphics.setLineWidth(3)
+    love.graphics.rectangle("line", overlayX, overlayY, card.width, overlayHeight, PERSON_HOVER_RADIUS,
+        PERSON_HOVER_RADIUS)
+
+    love.graphics.setColor(hoverColors.text)
     love.graphics.printf(
-        getPersonEffectText(card),
-        overlayX + 10,
-        overlayY + 8,
-        (card.width - 20) * viewportScale,
+        effectText,
+        overlayX + PERSON_HOVER_PADDING_X,
+        textY,
+        textWrapWidth,
         "center",
         0,
-        1 / viewportScale,
-        1 / viewportScale
+        textScale,
+        textScale
     )
-
-    local total = math.min(card.maxCapacity or 0, 8)
-    local filled = math.max(0, card.capacity or 0)
-    if total > 0 then
-        local indicatorsWidth = total * PERSON_HOVER_INDICATOR_SIZE + (total - 1) * PERSON_HOVER_INDICATOR_GAP
-        local startX = overlayX + (card.width - indicatorsWidth) * 0.5
-        local startY = overlayY + PERSON_HOVER_HEIGHT - PERSON_HOVER_INDICATOR_SIZE - 8
-
-        for i = 1, total do
-            if i <= filled then
-                love.graphics.setColor(0.53, 0.79, 0.98, 1)
-            else
-                love.graphics.setColor(0.79, 0.82, 0.86, 1)
-            end
-
-            local indicatorX = startX + (i - 1) * (PERSON_HOVER_INDICATOR_SIZE + PERSON_HOVER_INDICATOR_GAP)
-            love.graphics.rectangle("fill", indicatorX, startY, PERSON_HOVER_INDICATOR_SIZE, PERSON_HOVER_INDICATOR_SIZE,
-                4, 4)
-        end
-    end
 
     love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)
@@ -1125,17 +1160,19 @@ local function drawConsultingHoverOverlay(consultingRect)
         viewportScale = 1
     end
 
+    local hoverColors = Theme.colors.consultingHover
     local overlayX = consultingRect.x
     local overlayY = math.max(8, consultingRect.y - CONSULTING_HOVER_HEIGHT - CONSULTING_HOVER_GAP)
 
-    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setColor(hoverColors.fill)
     love.graphics.rectangle("fill", overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT)
 
-    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.setColor(hoverColors.border)
     love.graphics.setLineWidth(3)
     love.graphics.rectangle("line", overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT)
 
     love.graphics.setFont(Theme.fonts.cardBody)
+    love.graphics.setColor(hoverColors.text)
     drawConsultingPriceLine(
         overlayX,
         overlayY + 18,
@@ -1169,17 +1206,19 @@ local function drawNewDayButton()
         viewportScale = 1
     end
 
+    local buttonColors = Theme.colors.newDayButton
     love.graphics.setFont(Theme.fonts.uiButton)
 
-    love.graphics.setColor(0, 0, 0, 0.15)
+    love.graphics.setColor(buttonColors.shadow)
     love.graphics.rectangle("fill", button.x + 2, button.y + 2, button.width, button.height, 10, 10)
 
-    love.graphics.setColor(0.94, 0.97, 1, 1)
+    love.graphics.setColor(buttonColors.fill)
     love.graphics.rectangle("fill", button.x, button.y, button.width, button.height, 10, 10)
 
-    love.graphics.setColor(0.1, 0.2, 0.33, 1)
+    love.graphics.setColor(buttonColors.border)
     love.graphics.setLineWidth(2)
     love.graphics.rectangle("line", button.x, button.y, button.width, button.height, 10, 10)
+    love.graphics.setColor(buttonColors.text)
     love.graphics.printf(
         "Start New Day",
         button.x,
@@ -1192,7 +1231,8 @@ local function drawNewDayButton()
     )
 
     love.graphics.setFont(Theme.fonts.cardBody)
-    love.graphics.setColor(0.05, 0.08, 0.1, 0.75)
+    local labelColor = buttonColors.label
+    love.graphics.setColor(labelColor[1], labelColor[2], labelColor[3], 0.75)
     love.graphics.printf(
         "Day " .. tostring(state.day or 1),
         button.x,
@@ -1246,10 +1286,11 @@ local function drawConsultingZone(gameX, gameY)
         viewportScale = 1
     end
 
-    local bodyColor = raised and { 0.87, 0.79, 0.68, 1 } or { 0.84, 0.76, 0.66, 1 }
-    local headerColor = raised and { 0.76, 0.67, 0.58, 1 } or { 0.72, 0.63, 0.54, 1 }
+    local zoneColors = Theme.colors.consultingZone
+    local bodyColor = raised and zoneColors.bodyRaised or zoneColors.body
+    local headerColor = raised and zoneColors.headerRaised or zoneColors.header
 
-    love.graphics.setColor(0, 0, 0, 0.12)
+    love.graphics.setColor(zoneColors.shadow)
     love.graphics.rectangle("fill", zone.x + 2, zone.y + 2, zone.width, zone.height)
 
     love.graphics.setColor(bodyColor)
@@ -1275,13 +1316,14 @@ local function drawConsultingZone(gameX, gameY)
     love.graphics.setColor(headerColor)
     love.graphics.rectangle("fill", zone.x, zone.y, zone.width, Card.HEADER_HEIGHT)
 
-    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.setColor(zoneColors.border)
     love.graphics.setLineWidth(3)
     love.graphics.rectangle("line", zone.x, zone.y, zone.width, zone.height)
     love.graphics.setLineWidth(2)
     love.graphics.line(zone.x, zone.y + Card.HEADER_HEIGHT, zone.x + zone.width, zone.y + Card.HEADER_HEIGHT)
 
     love.graphics.setFont(Theme.fonts.cardHeader)
+    love.graphics.setColor(zoneColors.text)
     love.graphics.printf(
         "Business Consulting",
         zone.x,
@@ -1300,19 +1342,19 @@ end
 local function spawnHighValueOpportunityCard()
     local zone = getConsultingRect()
     local targetGameX = zone.x + zone.width + 56
-    local targetGameY = zone.y - CARD_HEIGHT - 22
-    local startGameX = zone.x + (zone.width - CARD_WIDTH) * 0.5
-    local startGameY = zone.y + (zone.height - CARD_HEIGHT) * 0.5
+    local targetGameY = zone.y - BOOSTER_PACK_HEIGHT - 22
+    local startGameX = zone.x + (zone.width - BOOSTER_PACK_WIDTH) * 0.5
+    local startGameY = zone.y + (zone.height - BOOSTER_PACK_HEIGHT) * 0.5
 
     local worldTargetX, worldTargetY = gameToWorld(targetGameX, targetGameY)
     local worldStartX, worldStartY = gameToWorld(startGameX, startGameY)
-    local targetX = clamp(worldTargetX, 0, WORLD_WIDTH - CARD_WIDTH)
-    local targetY = clamp(worldTargetY, 0, WORLD_HEIGHT - CARD_HEIGHT)
+    local targetX = clamp(worldTargetX, 0, WORLD_WIDTH - BOOSTER_PACK_WIDTH)
+    local targetY = clamp(worldTargetY, 0, WORLD_HEIGHT - BOOSTER_PACK_HEIGHT)
 
-    local startX = clamp(worldStartX, 0, WORLD_WIDTH - CARD_WIDTH)
-    local startY = clamp(worldStartY, 0, WORLD_HEIGHT - CARD_HEIGHT)
+    local startX = clamp(worldStartX, 0, WORLD_WIDTH - BOOSTER_PACK_WIDTH)
+    local startY = clamp(worldStartY, 0, WORLD_HEIGHT - BOOSTER_PACK_HEIGHT)
 
-    local opportunityCard = createCard({
+    local opportunityCard = createBoosterPack({
         cardType = "opportunity",
         title = "Actionable Insights",
         insightsRemaining = OPPORTUNITY_CLICK_LIMIT,
@@ -1372,8 +1414,10 @@ local function triggerOpportunityClick(opportunityCard)
 
     triggerOpportunityWobble(opportunityCard)
 
-    local originX = clamp(opportunityCard.x, 0, WORLD_WIDTH - CARD_WIDTH)
-    local originY = clamp(opportunityCard.y, 0, WORLD_HEIGHT - CARD_HEIGHT)
+    local sourceWidth = opportunityCard.width or CARD_WIDTH
+    local sourceHeight = opportunityCard.height or CARD_HEIGHT
+    local originX = clamp(opportunityCard.x, 0, WORLD_WIDTH - sourceWidth)
+    local originY = clamp(opportunityCard.y, 0, WORLD_HEIGHT - sourceHeight)
 
     local burstTargets = {
         { dx = -220, dy = -110 },
@@ -1480,7 +1524,7 @@ function love.load(isReload)
         width = APP_WIDTH,
         height = APP_HEIGHT,
         clearColor = Theme.colors.background,
-        barColor = { 0, 0, 0, 1 },
+        barColor = Theme.colors.letterbox,
     })
 
     Theme.load(Scaling.getScale())

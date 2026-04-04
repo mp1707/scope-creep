@@ -3,70 +3,33 @@ local Theme = require("src.ui.theme")
 
 local Card = {}
 Card.__index = Card
-Card.HEADER_HEIGHT = 34
+Card.HEADER_HEIGHT = 40
 
-local INDICATOR_SIZE = 16
-local INDICATOR_GAP = 5
+local CARD_CORNER_RADIUS = 8
+local CARD_BORDER_WIDTH = 3
+local CARD_SEPARATOR_WIDTH = 3
+local CARD_PADDING = 11
+local FOOTER_HEIGHT = 26
+local FEATURE_PIP_SIZE = 10
+local FEATURE_PIP_GAP = 4
+
 local CARD_BODY_ASPECT_WIDTH = 300
 local CARD_BODY_ASPECT_HEIGHT = 350
 local OPPORTUNITY_BACKGROUND_SCALE = 1.1
-local PERSON_ICON_SIZE_MULTIPLIER = 2
+
 local MONEY_ICON_PATH = "assets/icons/Green Cash 1st Outline 256px.png"
 local FEATURE_ICON_PATH = "assets/icons/Golden Star 1st Outline 256px.png"
 local OPPORTUNITY_BACKGROUND_PATH = "assets/icons/characters/featur_booster_pack.png"
+local EVENT_ICON_PATH = "assets/icons/Newspaper 1st Outline 256px.png"
+local PROBLEM_ICON_PATH = "assets/icons/Warning 1st Outline 256px.png"
+local SUPPORT_ICON_PATH = "assets/icons/Blue Pencil 1st Outline 256px.png"
+local DEFAULT_ICON_PATH = "assets/icons/Question Mark 1st Outline 256px.png"
 
-local moneyIconImage = nil
-local moneyIconLoadAttempted = false
-local featureIconImage = nil
-local featureIconLoadAttempted = false
-local opportunityBackgroundImage = nil
-local opportunityBackgroundLoadAttempted = false
 local cardIconImageCache = {}
 local cardIconLoadAttempted = {}
 local coverQuadCache = setmetatable({}, { __mode = "k" })
 
-local DEFAULT_STYLES = {
-    person = {
-        bodyColor = { 1, 1, 1, 1 },
-        headerColor = { 0.7, 0.86, 1, 1 },
-        borderColor = { 0, 0, 0, 1 },
-        textColor = { 0, 0, 0, 1 },
-        indicatorFill = { 0.53, 0.79, 0.98, 1 },
-        indicatorEmpty = { 0.79, 0.82, 0.86, 1 },
-    },
-    feature = {
-        bodyColor = { 0.98, 0.95, 0.86, 1 },
-        headerColor = { 0.93, 0.82, 0.33, 1 },
-        borderColor = { 0, 0, 0, 1 },
-        textColor = { 0, 0, 0, 1 },
-        indicatorFill = { 0.93, 0.82, 0.33, 1 },
-        indicatorEmpty = { 0.86, 0.84, 0.71, 1 },
-    },
-    money = {
-        bodyColor = { 0.88, 0.95, 0.87, 1 },
-        headerColor = { 0.56, 0.84, 0.55, 1 },
-        borderColor = { 0, 0, 0, 1 },
-        textColor = { 0, 0, 0, 1 },
-        indicatorFill = { 0.82, 0.86, 0.82, 1 },
-        indicatorEmpty = { 0.82, 0.86, 0.82, 1 },
-    },
-    opportunity = {
-        bodyColor = { 0.98, 0.94, 0.84, 1 },
-        headerColor = { 0.96, 0.89, 0.42, 1 },
-        borderColor = { 0, 0, 0, 1 },
-        textColor = { 0, 0, 0, 1 },
-        indicatorFill = { 0.82, 0.86, 0.82, 1 },
-        indicatorEmpty = { 0.82, 0.86, 0.82, 1 },
-    },
-    default = {
-        bodyColor = { 1, 1, 1, 1 },
-        headerColor = { 1, 1, 1, 1 },
-        borderColor = { 0, 0, 0, 1 },
-        textColor = { 0, 0, 0, 1 },
-        indicatorFill = { 0.8, 0.8, 0.8, 1 },
-        indicatorEmpty = { 0.8, 0.8, 0.8, 1 },
-    },
-}
+local DEFAULT_STYLES = Theme.cardStyles
 
 local function damp(current, target, speed, dt)
     local t = 1 - math.exp(-speed * dt)
@@ -79,57 +42,6 @@ end
 
 local function applyAlpha(color, alphaMultiplier)
     return color[1], color[2], color[3], (color[4] or 1) * alphaMultiplier
-end
-
-local function getMoneyIconImage()
-    if moneyIconImage or moneyIconLoadAttempted then
-        return moneyIconImage
-    end
-
-    moneyIconLoadAttempted = true
-
-    local ok, loadedImage = pcall(love.graphics.newImage, MONEY_ICON_PATH)
-    if not ok then
-        return nil
-    end
-
-    loadedImage:setFilter("linear", "linear")
-    moneyIconImage = loadedImage
-    return moneyIconImage
-end
-
-local function getOpportunityBackgroundImage()
-    if opportunityBackgroundImage or opportunityBackgroundLoadAttempted then
-        return opportunityBackgroundImage
-    end
-
-    opportunityBackgroundLoadAttempted = true
-
-    local ok, loadedImage = pcall(love.graphics.newImage, OPPORTUNITY_BACKGROUND_PATH)
-    if not ok then
-        return nil
-    end
-
-    loadedImage:setFilter("linear", "linear")
-    opportunityBackgroundImage = loadedImage
-    return opportunityBackgroundImage
-end
-
-local function getFeatureIconImage()
-    if featureIconImage or featureIconLoadAttempted then
-        return featureIconImage
-    end
-
-    featureIconLoadAttempted = true
-
-    local ok, loadedImage = pcall(love.graphics.newImage, FEATURE_ICON_PATH)
-    if not ok then
-        return nil
-    end
-
-    loadedImage:setFilter("linear", "linear")
-    featureIconImage = loadedImage
-    return featureIconImage
 end
 
 local function getCardIconImage(iconPath)
@@ -151,6 +63,14 @@ local function getCardIconImage(iconPath)
     loadedImage:setFilter("linear", "linear")
     cardIconImageCache[iconPath] = loadedImage
     return loadedImage
+end
+
+local function getOpportunityBackgroundImage()
+    return getCardIconImage(OPPORTUNITY_BACKGROUND_PATH)
+end
+
+local function getFeatureIconImage()
+    return getCardIconImage(FEATURE_ICON_PATH)
 end
 
 local function drawImageCover(image, x, y, width, height, alpha, tintR, tintG, tintB)
@@ -185,12 +105,57 @@ local function drawImageCover(image, x, y, width, height, alpha, tintR, tintG, t
     )
 end
 
+local function drawImageContain(image, x, y, width, height, alpha, tintR, tintG, tintB)
+    local imageWidth = image:getWidth()
+    local imageHeight = image:getHeight()
+    if imageWidth <= 0 or imageHeight <= 0 or width <= 0 or height <= 0 then
+        return
+    end
+
+    local scale = math.min(width / imageWidth, height / imageHeight)
+    local drawWidth = imageWidth * scale
+    local drawHeight = imageHeight * scale
+    local drawX = x + (width - drawWidth) * 0.5
+    local drawY = y + (height - drawHeight) * 0.5
+
+    love.graphics.setColor(tintR or 1, tintG or 1, tintB or 1, alpha or 1)
+    love.graphics.draw(image, drawX, drawY, 0, scale, scale)
+end
+
 local function getOpportunityBackgroundRect(card)
     local drawWidth = card.width * OPPORTUNITY_BACKGROUND_SCALE
     local drawHeight = card.height * OPPORTUNITY_BACKGROUND_SCALE
     local drawX = card.x - (drawWidth - card.width) * 0.5
     local drawY = card.y - (drawHeight - card.height) * 0.5
     return drawX, drawY, drawWidth, drawHeight
+end
+
+local function fitTextToWidth(text, maxWidth, font, scale)
+    local value = tostring(text or "")
+    if value == "" or not font then
+        return value
+    end
+
+    local textScale = scale or 1
+    if maxWidth <= 0 then
+        return ""
+    end
+
+    if (font:getWidth(value) * textScale) <= maxWidth then
+        return value
+    end
+
+    local ellipsis = "..."
+    local result = value
+    while #result > 0 and (font:getWidth(result .. ellipsis) * textScale) > maxWidth do
+        result = result:sub(1, -2)
+    end
+
+    if result == "" then
+        return ellipsis
+    end
+
+    return result .. ellipsis
 end
 
 local function drawMoneyAmountWithIcon(amount, x, y, width, options)
@@ -212,7 +177,7 @@ local function drawMoneyAmountWithIcon(amount, x, y, width, options)
     local textWidth = font:getWidth(amountLabel) * fontScale
     local textHeight = font:getHeight() * fontScale
 
-    local moneyIcon = getMoneyIconImage()
+    local moneyIcon = getCardIconImage(MONEY_ICON_PATH)
     local iconWidth = 0
     local iconHeight = 0
     local gap = 0
@@ -240,7 +205,6 @@ local function drawMoneyAmountWithIcon(amount, x, y, width, options)
     love.graphics.print(amountLabel, drawX, y, 0, fontScale, fontScale)
 
     if moneyIcon then
-        local rawWidth = moneyIcon:getWidth()
         local rawHeight = moneyIcon:getHeight()
         local drawScale = iconHeight / rawHeight
         local iconX = drawX + textWidth + gap
@@ -258,10 +222,57 @@ function Card.drawMoneyAmount(amount, x, y, width, options)
     drawMoneyAmountWithIcon(amount, x, y, width, options)
 end
 
-local function getBodyIconTargetSize()
-    local cardTheme = Theme.card or {}
-    local iconTheme = cardTheme.icon or {}
-    return tonumber(iconTheme.bodySize) or 74
+local function getDefaultHeroIconPath(cardType)
+    if cardType == "feature" then
+        return FEATURE_ICON_PATH
+    end
+    if cardType == "money" or cardType == "resource" then
+        return MONEY_ICON_PATH
+    end
+    if cardType == "problem" or cardType == "bug" then
+        return PROBLEM_ICON_PATH
+    end
+    if cardType == "support" or cardType == "tooling" then
+        return SUPPORT_ICON_PATH
+    end
+    if cardType == "opportunity" or cardType == "event" or cardType == "management" then
+        return EVENT_ICON_PATH
+    end
+    return DEFAULT_ICON_PATH
+end
+
+local function getBodyIconTargetSize(cardType, cardHeight)
+    local iconTheme = (Theme.card and Theme.card.icon) or {}
+    local themeValue = iconTheme.bodySize
+
+    if cardType == "person" or cardType == "developer" then
+        themeValue = iconTheme.personSize or themeValue
+    elseif cardType == "feature" then
+        themeValue = iconTheme.featureSize or themeValue
+    elseif cardType == "money" or cardType == "resource" then
+        themeValue = iconTheme.resourceSize or themeValue
+    elseif cardType == "support" or cardType == "tooling" then
+        themeValue = iconTheme.supportSize or themeValue
+    elseif cardType == "problem" or cardType == "bug" then
+        themeValue = iconTheme.problemSize or themeValue
+    else
+        themeValue = iconTheme.eventSize or themeValue
+    end
+
+    local size = tonumber(themeValue)
+    if not size then
+        if cardType == "person" or cardType == "developer" then
+            size = math.floor(cardHeight * 0.6 + 0.5)
+        elseif cardType == "money" or cardType == "resource" then
+            size = math.floor(cardHeight * 0.44 + 0.5)
+        elseif cardType == "feature" then
+            size = math.floor(cardHeight * 0.36 + 0.5)
+        else
+            size = math.floor(cardHeight * 0.38 + 0.5)
+        end
+    end
+
+    return math.max(32, size)
 end
 
 local function drawIconInArea(image, areaX, areaY, areaWidth, areaHeight, targetSize, options)
@@ -274,6 +285,8 @@ local function drawIconInArea(image, areaX, areaY, areaWidth, areaHeight, target
 
     options = options or {}
     local flipHorizontal = options.flipHorizontal == true
+    local verticalBias = tonumber(options.verticalBias) or 0
+    local alpha = options.alpha or 1
 
     local iconWidth = image:getWidth()
     local iconHeight = image:getHeight()
@@ -285,10 +298,11 @@ local function drawIconInArea(image, areaX, areaY, areaWidth, areaHeight, target
     local iconScale = math.min(fittedTargetSize / iconWidth, fittedTargetSize / iconHeight)
     local drawWidth = iconWidth * iconScale
     local drawHeight = iconHeight * iconScale
+    local freeY = areaHeight - drawHeight
     local drawX = areaX + (areaWidth - drawWidth) * 0.5
-    local drawY = areaY + (areaHeight - drawHeight) * 0.5
+    local drawY = areaY + (freeY * 0.5) + (freeY * verticalBias)
 
-    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setColor(1, 1, 1, alpha)
     if flipHorizontal then
         love.graphics.draw(image, drawX + drawWidth, drawY, 0, -iconScale, iconScale)
     else
@@ -296,7 +310,25 @@ local function drawIconInArea(image, areaX, areaY, areaWidth, areaHeight, target
     end
 end
 
-local function drawOpportunityBadge(card, alpha, viewportScale, badgeFont)
+local function drawTopRoundedHeader(x, y, width, height, radius)
+    if height <= 0 then
+        return
+    end
+
+    local r = math.max(0, math.min(radius or 0, width * 0.5, height))
+    if r <= 0 then
+        love.graphics.rectangle("fill", x, y, width, height)
+        return
+    end
+
+    local capHeight = math.min(r, height)
+    love.graphics.rectangle("fill", x, y + capHeight, width, height - capHeight)
+    love.graphics.rectangle("fill", x + r, y, math.max(0, width - (r * 2)), capHeight)
+    love.graphics.circle("fill", x + r, y + r, r)
+    love.graphics.circle("fill", x + width - r, y + r, r)
+end
+
+local function drawOpportunityBadge(card, alpha)
     if card.cardType ~= "opportunity" then
         return
     end
@@ -306,6 +338,11 @@ local function drawOpportunityBadge(card, alpha, viewportScale, badgeFont)
     local centerY = card.y
     local radius = 12
 
+    local viewportScale = Scaling.getScale()
+    if viewportScale <= 0 then
+        viewportScale = 1
+    end
+
     love.graphics.setColor(1, 1, 1, alpha)
     love.graphics.circle("fill", centerX, centerY, radius)
 
@@ -313,16 +350,25 @@ local function drawOpportunityBadge(card, alpha, viewportScale, badgeFont)
     love.graphics.setLineWidth(2)
     love.graphics.circle("line", centerX, centerY, radius)
 
-    if badgeFont then
-        love.graphics.setFont(badgeFont)
-    end
-
     local label = tostring(remaining)
     local font = love.graphics.getFont()
     local textWidth = font:getWidth(label) / viewportScale
     local textHeight = font:getHeight() / viewportScale
-    love.graphics.print(label, centerX - textWidth * 0.5, centerY - textHeight * 0.5, 0, 1 / viewportScale,
-        1 / viewportScale)
+    love.graphics.print(
+        label,
+        centerX - textWidth * 0.5,
+        centerY - textHeight * 0.5,
+        0,
+        1 / viewportScale,
+        1 / viewportScale
+    )
+end
+
+local function getCardHeroImage(card)
+    if card.iconPath and card.iconPath ~= "" then
+        return getCardIconImage(card.iconPath)
+    end
+    return getCardIconImage(getDefaultHeroIconPath(card.cardType))
 end
 
 function Card.new(config)
@@ -370,7 +416,7 @@ function Card.new(config)
 
     self.shadowOffsetX = 4
     self.shadowOffsetY = 4
-    self.shadowAlpha = 0.12
+    self.shadowAlpha = 0.11
     self.shadowExpand = 0
 
     self.targetShadowOffsetX = self.shadowOffsetX
@@ -443,10 +489,10 @@ function Card:beginDrag(px, py, force)
     self.dragOffsetX = px - self.x
     self.dragOffsetY = py - self.y
     self.targetScale = 1.03
-    self.targetShadowOffsetX = 8
-    self.targetShadowOffsetY = 12
-    self.targetShadowAlpha = 0.2
-    self.targetShadowExpand = 6
+    self.targetShadowOffsetX = 4
+    self.targetShadowOffsetY = 4
+    self.targetShadowAlpha = 0.14
+    self.targetShadowExpand = 0
     return true
 end
 
@@ -455,7 +501,7 @@ function Card:endDrag()
     self.targetScale = 1
     self.targetShadowOffsetX = 4
     self.targetShadowOffsetY = 4
-    self.targetShadowAlpha = 0.12
+    self.targetShadowAlpha = 0.11
     self.targetShadowExpand = 0
 end
 
@@ -506,52 +552,50 @@ function Card:getSnapshot()
     }
 end
 
-function Card:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
-    local textColor = self:getStyleColor("textColor")
-    love.graphics.setColor(textColor)
+function Card:drawBodyContent(alpha)
+    local headerHeight = Card.HEADER_HEIGHT
+    local bodyTop = self.y + headerHeight
+    local bodyBottom = self.y + self.height
+    local footerTop = bodyBottom - FOOTER_HEIGHT
 
-    if self.cardType == "person" then
-        local portraitImage = getCardIconImage(self.iconPath)
-        if portraitImage then
-            local bodyTop = self.y + Card.HEADER_HEIGHT
-            local bodyHeight = self.height - Card.HEADER_HEIGHT
-            drawIconInArea(
-                portraitImage,
-                self.x,
-                bodyTop + 4,
-                self.width,
-                math.max(1, bodyHeight - 8),
-                getBodyIconTargetSize() * PERSON_ICON_SIZE_MULTIPLIER,
-                { flipHorizontal = true }
-            )
-        end
-        return
+    local iconAreaX = self.x + CARD_PADDING
+    local iconAreaY = bodyTop + CARD_PADDING
+    local iconAreaWidth = self.width - CARD_PADDING * 2
+    local iconAreaHeight = math.max(1, footerTop - iconAreaY - CARD_PADDING)
+
+    local cardType = self.cardType
+    if cardType == "feature" and (self.costTotal or 0) > 0 and not self:isFeatureComplete() then
+        iconAreaY = iconAreaY + FEATURE_PIP_SIZE + FEATURE_PIP_GAP + 4
+        iconAreaHeight = math.max(1, footerTop - iconAreaY - CARD_PADDING)
+    elseif (cardType == "person" or cardType == "developer") and (tonumber(self.maxCapacity) or 0) > 0 then
+        iconAreaY = iconAreaY + FEATURE_PIP_SIZE + FEATURE_PIP_GAP + 4
+        iconAreaHeight = math.max(1, footerTop - iconAreaY - CARD_PADDING)
     end
 
-    if self.cardType == "opportunity" then
+    if cardType == "opportunity" then
+        local textColor = self:getStyleColor("textColor")
+        local viewportScale = Scaling.getScale()
+        if viewportScale <= 0 then
+            viewportScale = 1
+        end
+
         local opportunityBackground = getOpportunityBackgroundImage()
         if opportunityBackground then
             local drawX, drawY, drawWidth, drawHeight = getOpportunityBackgroundRect(self)
-            drawImageCover(opportunityBackground, drawX, drawY, drawWidth, drawHeight, 1)
-        end
-
-        if headerFont then
-            love.graphics.setFont(headerFont)
-        elseif bodyFont then
-            love.graphics.setFont(bodyFont)
+            drawImageContain(opportunityBackground, drawX, drawY, drawWidth, drawHeight, alpha)
         end
 
         local font = love.graphics.getFont()
         local lineHeight = font:getHeight() / viewportScale
         local verticalGap = math.max(4, lineHeight * 0.22)
-        local iconSize = getBodyIconTargetSize()
+        local iconSize = getBodyIconTargetSize("feature", self.height)
         local totalHeight = lineHeight + verticalGap + iconSize + verticalGap + lineHeight
         local startY = self.y + (self.height - totalHeight) * 0.5
         local featureTextY = startY
         local iconY = featureTextY + lineHeight + verticalGap
         local ideasTextY = iconY + iconSize + verticalGap
 
-        love.graphics.setColor(textColor)
+        love.graphics.setColor(applyAlpha(textColor, alpha))
         love.graphics.printf(
             "Feature",
             self.x + 12,
@@ -571,11 +615,12 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
                 iconY,
                 iconSize,
                 iconSize,
-                iconSize
+                iconSize,
+                { alpha = alpha }
             )
         end
 
-        love.graphics.setColor(textColor)
+        love.graphics.setColor(applyAlpha(textColor, alpha))
         love.graphics.printf(
             "Ideas",
             self.x + 12,
@@ -589,64 +634,48 @@ function Card:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
         return
     end
 
-    if self.cardType == "feature" then
-        if valueFont then
-            love.graphics.setFont(valueFont)
-        elseif bodyFont then
-            love.graphics.setFont(bodyFont)
-        end
+    local icon = getCardHeroImage(self)
+    if not icon then
+        return
+    end
 
-        local featureTheme = (Theme.card or {}).feature or {}
-        local valuePadding = tonumber(featureTheme.valuePadding) or 8
-        local indicatorPadding = tonumber(featureTheme.indicatorPadding) or 8
-        local bodyTop = self.y + Card.HEADER_HEIGHT
-        local bodyBottom = self.y + self.height
-        local font = love.graphics.getFont()
-        local textHeight = font:getHeight() / viewportScale
-        local moneyY = bodyBottom - textHeight - valuePadding + 2
-
-        local featureIcon = getFeatureIconImage()
-        if featureIcon then
-            local iconTop = bodyTop + indicatorPadding + INDICATOR_SIZE + 8
-            local iconBottom = moneyY - 10
-            local iconAreaX = self.x + 18
-            local iconAreaY = iconTop
-            local iconAreaWidth = self.width - 36
-            local iconAreaHeight = math.max(1, iconBottom - iconTop)
-            drawIconInArea(featureIcon, iconAreaX, iconAreaY, iconAreaWidth, iconAreaHeight, getBodyIconTargetSize())
-        end
-
-        love.graphics.setColor(textColor)
-        drawMoneyAmountWithIcon(
-            self.value or 0,
-            self.x + valuePadding,
-            moneyY,
-            self.width - (valuePadding * 2),
+    if cardType == "person" or cardType == "developer" then
+        drawIconInArea(
+            icon,
+            self.x + CARD_PADDING,
+            iconAreaY,
+            self.width - CARD_PADDING * 2,
+            iconAreaHeight,
+            getBodyIconTargetSize(cardType, self.height),
             {
-                align = "right",
-                fontScale = 1 / viewportScale,
-                iconHeightFactor = 0.9,
-                iconVerticalAlign = "bottom",
+                flipHorizontal = true,
+                verticalBias = -0.06,
+                alpha = alpha,
             }
         )
         return
     end
 
-    if self.cardType == "money" then
-        local moneyIcon = getMoneyIconImage()
-        if not moneyIcon then
-            return
-        end
-
-        local headerHeight = Card.HEADER_HEIGHT
-        local bodyTop = self.y + headerHeight
-        local bodyHeight = self.height - headerHeight
-        local iconAreaX = self.x + 18
-        local iconAreaY = bodyTop + 14
-        local iconAreaWidth = self.width - 36
-        local iconAreaHeight = math.max(1, bodyHeight - 28)
-        drawIconInArea(moneyIcon, iconAreaX, iconAreaY, iconAreaWidth, iconAreaHeight, getBodyIconTargetSize())
+    local iconTarget = getBodyIconTargetSize(cardType, self.height)
+    local verticalBias = -0.08
+    if cardType == "money" or cardType == "resource" then
+        verticalBias = -0.05
+    elseif cardType == "feature" then
+        verticalBias = -0.1
     end
+
+    drawIconInArea(
+        icon,
+        iconAreaX,
+        iconAreaY,
+        iconAreaWidth,
+        iconAreaHeight,
+        iconTarget,
+        {
+            alpha = alpha,
+            verticalBias = verticalBias,
+        }
+    )
 end
 
 function Card:drawIndicators(alpha)
@@ -657,8 +686,11 @@ function Card:drawIndicators(alpha)
         if self:isFeatureComplete() then
             return
         end
-        total = self.costTotal or 0
-        filled = self.costRemaining or 0
+        total = tonumber(self.costTotal) or 0
+        filled = math.max(0, math.floor(tonumber(self.costRemaining) or 0))
+    elseif self.cardType == "person" or self.cardType == "developer" then
+        total = tonumber(self.maxCapacity) or 0
+        filled = math.max(0, math.floor(tonumber(self.capacity) or 0))
     else
         return
     end
@@ -667,31 +699,149 @@ function Card:drawIndicators(alpha)
         return
     end
 
-    local drawTotal = math.min(total, 8)
-    local featureTheme = (Theme.card or {}).feature or {}
-    local indicatorPadding = tonumber(featureTheme.indicatorPadding) or 8
-    local startX = self.x + indicatorPadding
-    local startY = self.y + Card.HEADER_HEIGHT + indicatorPadding
+    local drawTotal = math.min(math.max(0, math.floor(total)), 8)
+    if drawTotal <= 0 then
+        return
+    end
 
-    local fillColor = self:getStyleColor("indicatorFill")
-    local emptyColor = self:getStyleColor("indicatorEmpty")
+    local filledColor = { 0, 0, 0, 1 }
+    local spentInnerColor = { 1, 1, 1, 1 }
+    local spentOutlineColor = { 0, 0, 0, 1 }
+
+    local startX = self.x + CARD_PADDING + (FEATURE_PIP_SIZE * 0.5)
+    local centerY = self.y + Card.HEADER_HEIGHT + CARD_PADDING + (FEATURE_PIP_SIZE * 0.5)
+    local radius = FEATURE_PIP_SIZE * 0.5
 
     for i = 1, drawTotal do
-        local x = startX + (i - 1) * (INDICATOR_SIZE + INDICATOR_GAP)
+        local centerX = startX + (i - 1) * (FEATURE_PIP_SIZE + FEATURE_PIP_GAP)
         local isFilled = i <= filled
-
         if isFilled then
-            love.graphics.setColor(applyAlpha(fillColor, alpha))
+            love.graphics.setColor(applyAlpha(filledColor, alpha))
+            love.graphics.circle("fill", centerX, centerY, radius)
         else
-            love.graphics.setColor(applyAlpha(emptyColor, alpha))
-        end
+            love.graphics.setColor(applyAlpha(spentInnerColor, alpha))
+            love.graphics.circle("fill", centerX, centerY, radius)
 
-        love.graphics.rectangle("fill", x, startY, INDICATOR_SIZE, INDICATOR_SIZE, 4, 4)
+            love.graphics.setColor(applyAlpha(spentOutlineColor, alpha))
+            love.graphics.setLineWidth(2)
+            love.graphics.circle("line", centerX, centerY, radius)
+        end
+    end
+
+    love.graphics.setLineWidth(1)
+end
+
+function Card:drawFooterInfo(viewportScale, bodyFont, valueFont, alpha)
+    local textColor = self:getStyleColor("textColor")
+    if valueFont then
+        love.graphics.setFont(valueFont)
+    elseif bodyFont then
+        love.graphics.setFont(bodyFont)
+    end
+
+    local font = love.graphics.getFont()
+    local fontScale = (1 / viewportScale) * 0.85
+    local lineHeight = font:getHeight() * fontScale
+    local footerY = self.y + self.height - CARD_PADDING - lineHeight
+    local leftX = self.x + CARD_PADDING
+    local rightZoneWidth = math.floor(self.width * 0.44)
+    local rightX = self.x + self.width - CARD_PADDING - rightZoneWidth
+    local leftZoneWidth = math.max(1, rightX - leftX - 4)
+
+    local function printLeftLine(text)
+        if text == nil or text == "" then
+            return
+        end
+        local clipped = fitTextToWidth(text, leftZoneWidth, font, fontScale)
+        love.graphics.printf(clipped, leftX, footerY, leftZoneWidth * viewportScale, "left", 0, fontScale, fontScale)
+    end
+
+    local function printRightLine(text)
+        if text == nil or text == "" then
+            return
+        end
+        local clipped = fitTextToWidth(text, rightZoneWidth, font, fontScale)
+        love.graphics.printf(clipped, rightX, footerY, rightZoneWidth * viewportScale, "right", 0, fontScale, fontScale)
+    end
+
+    love.graphics.setColor(applyAlpha(textColor, alpha))
+
+    if self.cardType == "feature" then
+        drawMoneyAmountWithIcon(
+            self.value or 0,
+            rightX,
+            footerY,
+            rightZoneWidth,
+            {
+                align = "right",
+                fontScale = fontScale,
+                iconHeightFactor = 0.9,
+                iconVerticalAlign = "bottom",
+            }
+        )
+        return
+    end
+
+    if self.cardType == "money" or self.cardType == "resource" then
+        printLeftLine(self.effect)
+        drawMoneyAmountWithIcon(
+            self.moneyAmount or self.value or 1,
+            rightX,
+            footerY,
+            rightZoneWidth,
+            {
+                align = "right",
+                fontScale = fontScale,
+                iconHeightFactor = 0.9,
+                iconVerticalAlign = "bottom",
+            }
+        )
+        return
+    end
+
+    if self.cardType == "person" or self.cardType == "developer" then
+        return
+    end
+
+    if self.cardType == "opportunity" then
+        return
+    end
+
+    if self.cardType == "event" or self.cardType == "management"
+        or self.cardType == "problem" or self.cardType == "bug" then
+        printLeftLine(self.effect or "Kurzinfo")
+        if self.insightsRemaining ~= nil then
+            printRightLine(string.format("x%d", math.max(0, math.floor(self.insightsRemaining))))
+        end
+        return
+    end
+
+    printLeftLine(self.effect)
+    if self.value ~= nil then
+        drawMoneyAmountWithIcon(
+            self.value or 0,
+            rightX,
+            footerY,
+            rightZoneWidth,
+            {
+                align = "right",
+                fontScale = fontScale,
+                iconHeightFactor = 0.9,
+                iconVerticalAlign = "bottom",
+            }
+        )
     end
 end
 
 function Card:drawShadow(alpha)
-    local effectiveAlpha = (self.shadowAlpha or 0.12) * (alpha or 1)
+    local effectiveAlpha = (self.shadowAlpha or 0.11) * (alpha or 1)
+    if effectiveAlpha <= 0 then
+        return
+    end
+
+    local shadowExpand = self.shadowExpand or 0
+    local shadowOffsetX = self.shadowOffsetX or 4
+    local shadowOffsetY = self.shadowOffsetY or 4
 
     if self.cardType == "opportunity" then
         local backgroundImage = getOpportunityBackgroundImage()
@@ -700,11 +850,7 @@ function Card:drawShadow(alpha)
         end
 
         local drawX, drawY, drawWidth, drawHeight = getOpportunityBackgroundRect(self)
-        local shadowExpand = self.shadowExpand or 0
-        local shadowOffsetX = self.shadowOffsetX or 0
-        local shadowOffsetY = self.shadowOffsetY or 0
-
-        drawImageCover(
+        drawImageContain(
             backgroundImage,
             drawX - shadowExpand * 0.5 + shadowOffsetX,
             drawY - shadowExpand * 0.5 + shadowOffsetY,
@@ -718,13 +864,16 @@ function Card:drawShadow(alpha)
         return
     end
 
-    love.graphics.setColor(0, 0, 0, effectiveAlpha)
+    local shadowColor = Theme.colors.cardShadow
+    love.graphics.setColor(shadowColor[1], shadowColor[2], shadowColor[3], effectiveAlpha)
     love.graphics.rectangle(
         "fill",
-        self.x - self.shadowExpand * 0.5 + self.shadowOffsetX,
-        self.y - self.shadowExpand * 0.5 + self.shadowOffsetY,
-        self.width + self.shadowExpand,
-        self.height + self.shadowExpand
+        self.x - shadowExpand * 0.5 + shadowOffsetX,
+        self.y - shadowExpand * 0.5 + shadowOffsetY,
+        self.width + shadowExpand,
+        self.height + shadowExpand,
+        CARD_CORNER_RADIUS,
+        CARD_CORNER_RADIUS
     )
 end
 
@@ -756,27 +905,26 @@ function Card:draw(headerFont, options)
     local textColor = self:getStyleColor("textColor")
     local bodyColor = self:getStyleColor("bodyColor")
     local headerColor = self:getStyleColor("headerColor")
+    local headerHeight = Card.HEADER_HEIGHT
 
     if not isOpportunity then
         love.graphics.setColor(applyAlpha(bodyColor, alpha))
-        love.graphics.rectangle("fill", self.x, self.y, self.width, self.height)
-    end
+        love.graphics.rectangle("fill", self.x, self.y, self.width, self.height, CARD_CORNER_RADIUS, CARD_CORNER_RADIUS)
 
-    local showHeader = not isOpportunity
-    local headerHeight = showHeader and Card.HEADER_HEIGHT or 0
-    if showHeader then
         love.graphics.setColor(applyAlpha(headerColor, alpha))
-        love.graphics.rectangle("fill", self.x, self.y, self.width, headerHeight)
-    end
+        drawTopRoundedHeader(self.x, self.y, self.width, headerHeight, CARD_CORNER_RADIUS)
 
-    if not isOpportunity then
         love.graphics.setColor(applyAlpha(borderColor, alpha))
-        love.graphics.setLineWidth(3)
-        love.graphics.rectangle("line", self.x, self.y, self.width, self.height)
-    end
-
-    if headerFont then
-        love.graphics.setFont(headerFont)
+        love.graphics.setLineWidth(CARD_BORDER_WIDTH)
+        love.graphics.rectangle(
+            "line",
+            self.x,
+            self.y,
+            self.width,
+            self.height,
+            CARD_CORNER_RADIUS,
+            CARD_CORNER_RADIUS
+        )
     end
 
     local viewportScale = Scaling.getScale()
@@ -784,39 +932,34 @@ function Card:draw(headerFont, options)
         viewportScale = 1
     end
 
-    if showHeader then
-        local fontHeight = love.graphics.getFont():getHeight()
-        local effectiveFontHeight = fontHeight / viewportScale
-        local titleY = self.y + (headerHeight - effectiveFontHeight) * 0.5
-
-        love.graphics.setColor(applyAlpha(textColor, alpha))
-        love.graphics.print(
-            self.title,
-            self.x + 10,
-            titleY,
-            0,
-            1 / viewportScale,
-            1 / viewportScale
-        )
-
-        love.graphics.setLineWidth(2)
-        love.graphics.setColor(applyAlpha(borderColor, alpha))
-        love.graphics.line(self.x, self.y + headerHeight, self.x + self.width, self.y + headerHeight)
+    if headerFont then
+        love.graphics.setFont(headerFont)
     end
 
-    love.graphics.setColor(applyAlpha(textColor, alpha))
-    self:drawBodyContent(viewportScale, bodyFont, valueFont, headerFont)
+    if not isOpportunity then
+        local headerFontRef = love.graphics.getFont()
+        local headerScale = 1 / viewportScale
+        local titleY = self.y + (headerHeight - (headerFontRef:getHeight() * headerScale)) * 0.5
+        local titleMaxWidth = self.width - CARD_PADDING * 2
+        local titleText = fitTextToWidth(self.title, titleMaxWidth, headerFontRef, headerScale)
 
-    if self.cardType == "person" then
+        love.graphics.setColor(applyAlpha(textColor, alpha))
+        love.graphics.print(titleText, self.x + CARD_PADDING, titleY, 0, headerScale, headerScale)
+
         love.graphics.setColor(applyAlpha(borderColor, alpha))
-        love.graphics.setLineWidth(3)
-        love.graphics.rectangle("line", self.x, self.y, self.width, self.height)
-        love.graphics.setLineWidth(2)
-        love.graphics.line(self.x, self.y + headerHeight, self.x + self.width, self.y + headerHeight)
+        love.graphics.setLineWidth(CARD_SEPARATOR_WIDTH)
+        love.graphics.line(
+            self.x + CARD_BORDER_WIDTH * 0.5,
+            self.y + headerHeight,
+            self.x + self.width - CARD_BORDER_WIDTH * 0.5,
+            self.y + headerHeight
+        )
     end
 
     self:drawIndicators(alpha)
-    drawOpportunityBadge(self, alpha, viewportScale, bodyFont)
+    self:drawBodyContent(alpha)
+    drawOpportunityBadge(self, alpha)
+    self:drawFooterInfo(viewportScale, bodyFont, valueFont, alpha)
 
     love.graphics.pop()
     love.graphics.setLineWidth(1)

@@ -1,6 +1,8 @@
 -- Hot Reload for Scope Creep
 -- Watches Lua files and reloads code while preserving runtime state.
 
+local Theme = require("src.ui.theme")
+
 local HotReload = {
     enabled = true,
     checkInterval = 0.5,
@@ -135,16 +137,18 @@ function HotReload:draw(drawHeight, viewportScale)
         alpha = (2 - elapsed) / 0.6
     end
 
-    local color = { 0.22, 0.78, 0.47, math.max(0, alpha) }
+    local textColor = Theme.colors.reloadToast.text
+    local shadowColor = Theme.colors.reloadToast.shadow
+    local textAlpha = math.max(0, alpha)
     local height = drawHeight or love.graphics.getHeight()
     local scale = tonumber(viewportScale) or 1
     if scale <= 0 then
         scale = 1
     end
 
-    love.graphics.setColor(0, 0, 0, 0.38 * color[4])
+    love.graphics.setColor(shadowColor[1], shadowColor[2], shadowColor[3], shadowColor[4] * textAlpha)
     love.graphics.print(self.reloadMessage, 18, height - 34, 0, 1 / scale, 1 / scale)
-    love.graphics.setColor(color)
+    love.graphics.setColor(textColor[1], textColor[2], textColor[3], textAlpha)
     love.graphics.print(self.reloadMessage, 16, height - 36, 0, 1 / scale, 1 / scale)
     love.graphics.setColor(1, 1, 1, 1)
 end
