@@ -5,12 +5,15 @@ local Card = require("src.ui.card")
 
 local APP_WIDTH = 1920
 local APP_HEIGHT = 1080
+local WORLD_WIDTH = APP_WIDTH * 2
+local WORLD_HEIGHT = APP_HEIGHT * 2
 
 local state = {
     time = 0,
     day = 1,
     nextCardId = 1,
     cards = nil,
+    camera = nil,
 }
 
 local GRID_SIZE = 30
@@ -36,19 +39,31 @@ local PERSON_HOVER_INDICATOR_SIZE = 16
 local PERSON_HOVER_INDICATOR_GAP = 5
 
 local NEW_DAY_BUTTON = {
-    x = APP_WIDTH - 250,
-    y = 24,
     width = 220,
     height = 52,
+    marginRight = 26,
+    marginBottom = 20,
 }
 
 local CONSULTING_ZONE = {
-    x = 34,
-    y = 34,
     width = 250,
     height = 112,
+    marginLeft = 34,
+    visibleHeight = 84,
+    hoverLift = 16,
     cost = 1,
 }
+
+local camera = {
+    x = 0,
+    y = 0,
+    zoom = 1,
+    minZoom = 0.65,
+    maxZoom = 1.9,
+    zoomStep = 1.12,
+}
+
+local consultingHover = 0
 
 local cards = {}
 local draggingCards = {}
@@ -56,10 +71,16 @@ local dragRootCard = nil
 local stickyDragMode = false
 local dragPressStartScreenX = nil
 local dragPressStartScreenY = nil
+local panningWorld = false
 
 local consumeMoneyAtConsulting
 local spawnMoneyForFeature
 local createSideBounceMotion
+local clampCamera
+local gameToWorld
+local worldToGame
+local getNewDayButtonRect
+local getConsultingRect
 
 local function clamp(value, minValue, maxValue)
     return math.max(minValue, math.min(maxValue, value))
@@ -77,6 +98,69 @@ end
 local function easeOutQuad(t)
     local inv = 1 - t
     return 1 - (inv * inv)
+end
+
+local function getCameraViewSize()
+    local zoom = camera.zoom
+    if zoom <= 0 then
+        zoom = 1
+    end
+    return APP_WIDTH / zoom, APP_HEIGHT / zoom
+end
+
+clampCamera = function()
+    local viewWidth, viewHeight = getCameraViewSize()
+    camera.x = clamp(camera.x, 0, math.max(0, WORLD_WIDTH - viewWidth))
+    camera.y = clamp(camera.y, 0, math.max(0, WORLD_HEIGHT - viewHeight))
+end
+
+local function setCameraCenteredOn(worldX, worldY)
+    local viewWidth, viewHeight = getCameraViewSize()
+    camera.x = (worldX or 0) - viewWidth * 0.5
+    camera.y = (worldY or 0) - viewHeight * 0.5
+    clampCamera()
+end
+
+gameToWorld = function(gameX, gameY)
+    if gameX == nil or gameY == nil then
+        return nil, nil
+    end
+    local zoom = camera.zoom
+    if zoom <= 0 then
+        zoom = 1
+    end
+    return camera.x + (gameX / zoom), camera.y + (gameY / zoom)
+end
+
+worldToGame = function(worldX, worldY)
+    if worldX == nil or worldY == nil then
+        return nil, nil
+    end
+    local zoom = camera.zoom
+    if zoom <= 0 then
+        zoom = 1
+    end
+    return (worldX - camera.x) * zoom, (worldY - camera.y) * zoom
+end
+
+getNewDayButtonRect = function()
+    return {
+        x = APP_WIDTH - NEW_DAY_BUTTON.width - NEW_DAY_BUTTON.marginRight,
+        y = APP_HEIGHT - NEW_DAY_BUTTON.height - NEW_DAY_BUTTON.marginBottom,
+        width = NEW_DAY_BUTTON.width,
+        height = NEW_DAY_BUTTON.height,
+    }
+end
+
+getConsultingRect = function()
+    local baseY = APP_HEIGHT - CONSULTING_ZONE.visibleHeight
+    local lift = CONSULTING_ZONE.hoverLift * consultingHover
+    return {
+        x = CONSULTING_ZONE.marginLeft,
+        y = baseY - lift,
+        width = CONSULTING_ZONE.width,
+        height = CONSULTING_ZONE.height,
+    }
 end
 
 local function copyState(value)
@@ -311,8 +395,8 @@ local function applyStackSnap(cardToSnap, excludedCards)
     end
 
     cardToSnap.stackParentId = target.parent.id
-    cardToSnap.targetX = clamp(target.x, 0, APP_WIDTH - CARD_WIDTH)
-    cardToSnap.targetY = clamp(target.y, 0, APP_HEIGHT - CARD_HEIGHT)
+    cardToSnap.targetX = clamp(target.x, 0, WORLD_WIDTH - CARD_WIDTH)
+    cardToSnap.targetY = clamp(target.y, 0, WORLD_HEIGHT - CARD_HEIGHT)
     return true
 end
 
@@ -376,8 +460,8 @@ local function endDragSelection()
     if snapDeltaX ~= 0 or snapDeltaY ~= 0 then
         for _, card in ipairs(draggingCards) do
             if card ~= rootCard then
-                card.targetX = clamp(card.targetX + snapDeltaX, 0, APP_WIDTH - CARD_WIDTH)
-                card.targetY = clamp(card.targetY + snapDeltaY, 0, APP_HEIGHT - CARD_HEIGHT)
+                card.targetX = clamp(card.targetX + snapDeltaX, 0, WORLD_WIDTH - CARD_WIDTH)
+                card.targetY = clamp(card.targetY + snapDeltaY, 0, WORLD_HEIGHT - CARD_HEIGHT)
             end
         end
     end
@@ -433,14 +517,14 @@ local function drawDragStackShadow()
 end
 
 local function drawPaperGrid()
-    for x = 0, APP_WIDTH, GRID_SIZE do
+    for x = 0, WORLD_WIDTH, GRID_SIZE do
         love.graphics.setColor(GRID_COLOR)
-        love.graphics.line(x, 0, x, APP_HEIGHT)
+        love.graphics.line(x, 0, x, WORLD_HEIGHT)
     end
 
-    for y = 0, APP_HEIGHT, GRID_SIZE do
+    for y = 0, WORLD_HEIGHT, GRID_SIZE do
         love.graphics.setColor(GRID_COLOR)
-        love.graphics.line(0, y, APP_WIDTH, y)
+        love.graphics.line(0, y, WORLD_WIDTH, y)
     end
 
     love.graphics.setColor(1, 1, 1, 1)
@@ -465,8 +549,8 @@ local function createCard(config)
         width = config.width or CARD_WIDTH,
         height = config.height or CARD_HEIGHT,
         style = config.style,
-        worldWidth = APP_WIDTH,
-        worldHeight = APP_HEIGHT,
+        worldWidth = WORLD_WIDTH,
+        worldHeight = WORLD_HEIGHT,
         x = config.x,
         y = config.y,
         targetX = config.targetX,
@@ -475,8 +559,8 @@ local function createCard(config)
 end
 
 local function createDefaultCards()
-    local centeredX = (APP_WIDTH - CARD_WIDTH) * 0.5
-    local centeredY = (APP_HEIGHT - CARD_HEIGHT) * 0.5
+    local centeredX = (WORLD_WIDTH - CARD_WIDTH) * 0.5
+    local centeredY = (WORLD_HEIGHT - CARD_HEIGHT) * 0.5
 
     local steveCard = createCard({
         cardType = "person",
@@ -571,7 +655,7 @@ local function releaseCompletedFeature(featureCard, workerCard)
     featureCard.costRemaining = 0
 
     local moneyCard = spawnMoneyForFeature(featureCard)
-    local moneySettleX = clamp(featureCard.x + 92, 0, APP_WIDTH - CARD_WIDTH)
+    local moneySettleX = clamp(featureCard.x + 92, 0, WORLD_WIDTH - CARD_WIDTH)
 
     removeCardInstance(featureCard)
 
@@ -579,7 +663,7 @@ local function releaseCompletedFeature(featureCard, workerCard)
         moneyCard.x,
         moneyCard.y,
         moneySettleX,
-        clamp(moneyCard.y, 0, APP_HEIGHT - CARD_HEIGHT)
+        clamp(moneyCard.y, 0, WORLD_HEIGHT - CARD_HEIGHT)
     )
     moneyCard.targetX = moneyCard.x
     moneyCard.targetY = moneyCard.y
@@ -621,10 +705,10 @@ spawnMoneyForFeature = function(featureCard)
         cardType = "money",
         title = "Money",
         moneyAmount = featureCard.value or 1,
-        x = clamp(featureCard.x + 20, 0, APP_WIDTH - CARD_WIDTH),
-        y = clamp(featureCard.y + 10, 0, APP_HEIGHT - CARD_HEIGHT),
-        targetX = clamp(featureCard.targetX + 20, 0, APP_WIDTH - CARD_WIDTH),
-        targetY = clamp(featureCard.targetY + 10, 0, APP_HEIGHT - CARD_HEIGHT),
+        x = clamp(featureCard.x + 20, 0, WORLD_WIDTH - CARD_WIDTH),
+        y = clamp(featureCard.y + 10, 0, WORLD_HEIGHT - CARD_HEIGHT),
+        targetX = clamp(featureCard.targetX + 20, 0, WORLD_WIDTH - CARD_WIDTH),
+        targetY = clamp(featureCard.targetY + 10, 0, WORLD_HEIGHT - CARD_HEIGHT),
     })
 
     table.insert(cards, moneyCard)
@@ -732,8 +816,8 @@ local function updatePhysicalCardMotions(dt)
             local tiltWave = math.sin(progress * math.pi) * (motion.tilt or 0.11) * direction
             card.rotation = damp(card.rotation or 0, tiltWave, 10, dt)
 
-            card.x = clamp(card.x, 0, APP_WIDTH - CARD_WIDTH)
-            card.y = clamp(card.y, 0, APP_HEIGHT - CARD_HEIGHT)
+            card.x = clamp(card.x, 0, WORLD_WIDTH - CARD_WIDTH)
+            card.y = clamp(card.y, 0, WORLD_HEIGHT - CARD_HEIGHT)
             card.targetX = card.x
             card.targetY = card.y
             card.renderAlpha = 1
@@ -749,8 +833,8 @@ local function updateAttachedCardTargets()
         if card.stackParentId and not card:isDragging() and not card.motionState then
             local parent = getCardById(card.stackParentId)
             if parent then
-                card.targetX = clamp(parent.targetX, 0, APP_WIDTH - CARD_WIDTH)
-                card.targetY = clamp(parent.targetY + STACK_OFFSET_Y, 0, APP_HEIGHT - CARD_HEIGHT)
+                card.targetX = clamp(parent.targetX, 0, WORLD_WIDTH - CARD_WIDTH)
+                card.targetY = clamp(parent.targetY + STACK_OFFSET_Y, 0, WORLD_HEIGHT - CARD_HEIGHT)
             else
                 card.stackParentId = nil
             end
@@ -801,14 +885,14 @@ local function getPersonEffectText(card)
     return effectText
 end
 
-local function getTopHoveredPersonCard(gameX, gameY)
-    if not gameX or not gameY then
+local function getTopHoveredPersonCard(worldX, worldY)
+    if not worldX or not worldY then
         return nil
     end
 
     for i = #cards, 1, -1 do
         local card = cards[i]
-        if card:containsPoint(gameX, gameY) then
+        if card:containsPoint(worldX, worldY) then
             if card.cardType == "person" then
                 return card
             end
@@ -890,6 +974,7 @@ local function drawCardWithEffects(card, options)
 end
 
 local function drawNewDayButton()
+    local button = getNewDayButtonRect()
     local viewportScale = Scaling.getScale()
     if viewportScale <= 0 then
         viewportScale = 1
@@ -898,22 +983,19 @@ local function drawNewDayButton()
     love.graphics.setFont(Theme.fonts.uiButton)
 
     love.graphics.setColor(0, 0, 0, 0.15)
-    love.graphics.rectangle("fill", NEW_DAY_BUTTON.x + 2, NEW_DAY_BUTTON.y + 2, NEW_DAY_BUTTON.width,
-        NEW_DAY_BUTTON.height, 10, 10)
+    love.graphics.rectangle("fill", button.x + 2, button.y + 2, button.width, button.height, 10, 10)
 
     love.graphics.setColor(0.94, 0.97, 1, 1)
-    love.graphics.rectangle("fill", NEW_DAY_BUTTON.x, NEW_DAY_BUTTON.y, NEW_DAY_BUTTON.width, NEW_DAY_BUTTON.height, 10,
-        10)
+    love.graphics.rectangle("fill", button.x, button.y, button.width, button.height, 10, 10)
 
     love.graphics.setColor(0.1, 0.2, 0.33, 1)
     love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", NEW_DAY_BUTTON.x, NEW_DAY_BUTTON.y, NEW_DAY_BUTTON.width, NEW_DAY_BUTTON.height, 10,
-        10)
+    love.graphics.rectangle("line", button.x, button.y, button.width, button.height, 10, 10)
     love.graphics.printf(
         "Start New Day",
-        NEW_DAY_BUTTON.x,
-        NEW_DAY_BUTTON.y + 10,
-        NEW_DAY_BUTTON.width * viewportScale,
+        button.x,
+        button.y + 10,
+        button.width * viewportScale,
         "center",
         0,
         1 / viewportScale,
@@ -924,9 +1006,9 @@ local function drawNewDayButton()
     love.graphics.setColor(0.05, 0.08, 0.1, 0.75)
     love.graphics.printf(
         "Day " .. tostring(state.day or 1),
-        NEW_DAY_BUTTON.x,
-        NEW_DAY_BUTTON.y + NEW_DAY_BUTTON.height + 4,
-        NEW_DAY_BUTTON.width * viewportScale,
+        button.x,
+        button.y - 30,
+        button.width * viewportScale,
         "center",
         0,
         1 / viewportScale,
@@ -949,7 +1031,8 @@ local function isCardCenterInsideRect(card, rect)
 
     local centerX = (card.targetX or card.x) + card.width * 0.5
     local centerY = (card.targetY or card.y) + card.height * 0.5
-    return pointInRect(centerX, centerY, rect)
+    local centerGameX, centerGameY = worldToGame(centerX, centerY)
+    return pointInRect(centerGameX, centerGameY, rect)
 end
 
 local function isConsultingDropCandidate(card)
@@ -961,37 +1044,42 @@ end
 
 local function isConsultingDropActive()
     local rootCard = dragRootCard or draggingCards[1]
-    return isConsultingDropCandidate(rootCard) and isCardCenterInsideRect(rootCard, CONSULTING_ZONE)
+    return isConsultingDropCandidate(rootCard) and isCardCenterInsideRect(rootCard, getConsultingRect())
 end
 
-local function drawConsultingZone()
+local function drawConsultingZone(gameX, gameY)
+    local zone = getConsultingRect()
     local activeDrop = isConsultingDropActive()
+    local hovered = gameX and gameY and pointInRect(gameX, gameY, zone) or false
+    local raised = activeDrop or hovered
     local viewportScale = Scaling.getScale()
     if viewportScale <= 0 then
         viewportScale = 1
     end
 
-    love.graphics.setColor(0, 0, 0, 0.12)
-    love.graphics.rectangle("fill", CONSULTING_ZONE.x + 2, CONSULTING_ZONE.y + 2, CONSULTING_ZONE.width,
-        CONSULTING_ZONE.height)
+    local bodyColor = raised and { 0.95, 0.97, 0.9, 1 } or { 0.94, 0.94, 0.92, 1 }
+    local headerColor = raised and { 0.86, 0.92, 0.8, 1 } or { 0.9, 0.9, 0.88, 1 }
 
-    if activeDrop then
-        love.graphics.setColor(0.78, 0.95, 0.78, 1)
-    else
-        love.graphics.setColor(0.92, 0.92, 0.92, 1)
-    end
-    love.graphics.rectangle("fill", CONSULTING_ZONE.x, CONSULTING_ZONE.y, CONSULTING_ZONE.width, CONSULTING_ZONE.height)
+    love.graphics.setColor(0, 0, 0, 0.12)
+    love.graphics.rectangle("fill", zone.x + 2, zone.y + 2, zone.width, zone.height)
+
+    love.graphics.setColor(bodyColor)
+    love.graphics.rectangle("fill", zone.x, zone.y, zone.width, zone.height)
+    love.graphics.setColor(headerColor)
+    love.graphics.rectangle("fill", zone.x, zone.y, zone.width, Card.HEADER_HEIGHT)
 
     love.graphics.setColor(0, 0, 0, 1)
     love.graphics.setLineWidth(3)
-    love.graphics.rectangle("line", CONSULTING_ZONE.x, CONSULTING_ZONE.y, CONSULTING_ZONE.width, CONSULTING_ZONE.height)
+    love.graphics.rectangle("line", zone.x, zone.y, zone.width, zone.height)
+    love.graphics.setLineWidth(2)
+    love.graphics.line(zone.x, zone.y + Card.HEADER_HEIGHT, zone.x + zone.width, zone.y + Card.HEADER_HEIGHT)
 
     love.graphics.setFont(Theme.fonts.uiButton)
     love.graphics.printf(
         "Consulting",
-        CONSULTING_ZONE.x,
-        CONSULTING_ZONE.y + 18,
-        CONSULTING_ZONE.width * viewportScale,
+        zone.x,
+        zone.y + 6,
+        zone.width * viewportScale,
         "center",
         0,
         1 / viewportScale,
@@ -1001,9 +1089,9 @@ local function drawConsultingZone()
     love.graphics.setFont(Theme.fonts.cardBody)
     Card.drawMoneyAmount(
         CONSULTING_ZONE.cost,
-        CONSULTING_ZONE.x,
-        CONSULTING_ZONE.y + 62,
-        CONSULTING_ZONE.width,
+        zone.x,
+        zone.y + 62,
+        zone.width,
         {
             align = "center",
             iconHeightFactor = 0.9,
@@ -1016,15 +1104,19 @@ local function drawConsultingZone()
 end
 
 local function spawnHighValueOpportunityCard()
-    local targetX = clamp(
-        CONSULTING_ZONE.x + (CONSULTING_ZONE.width - CARD_WIDTH) * 0.5,
-        0,
-        APP_WIDTH - CARD_WIDTH
-    )
-    local targetY = clamp(CONSULTING_ZONE.y + CONSULTING_ZONE.height + 20, 0, APP_HEIGHT - CARD_HEIGHT - 44)
+    local zone = getConsultingRect()
+    local targetGameX = zone.x + zone.width + 56
+    local targetGameY = zone.y - CARD_HEIGHT - 22
+    local startGameX = zone.x + (zone.width - CARD_WIDTH) * 0.5
+    local startGameY = zone.y + (zone.height - CARD_HEIGHT) * 0.5
 
-    local startX = targetX
-    local startY = 0
+    local worldTargetX, worldTargetY = gameToWorld(targetGameX, targetGameY)
+    local worldStartX, worldStartY = gameToWorld(startGameX, startGameY)
+    local targetX = clamp(worldTargetX, 0, WORLD_WIDTH - CARD_WIDTH)
+    local targetY = clamp(worldTargetY, 0, WORLD_HEIGHT - CARD_HEIGHT)
+
+    local startX = clamp(worldStartX, 0, WORLD_WIDTH - CARD_WIDTH)
+    local startY = clamp(worldStartY, 0, WORLD_HEIGHT - CARD_HEIGHT)
 
     local opportunityCard = createCard({
         cardType = "opportunity",
@@ -1061,7 +1153,7 @@ consumeMoneyAtConsulting = function(card)
         return false
     end
 
-    if not isCardCenterInsideRect(card, CONSULTING_ZONE) then
+    if not isCardCenterInsideRect(card, getConsultingRect()) then
         return false
     end
 
@@ -1084,8 +1176,8 @@ local function triggerOpportunityClick(opportunityCard)
         return
     end
 
-    local originX = clamp(opportunityCard.x, 0, APP_WIDTH - CARD_WIDTH)
-    local originY = clamp(opportunityCard.y, 0, APP_HEIGHT - CARD_HEIGHT)
+    local originX = clamp(opportunityCard.x, 0, WORLD_WIDTH - CARD_WIDTH)
+    local originY = clamp(opportunityCard.y, 0, WORLD_HEIGHT - CARD_HEIGHT)
 
     local burstTargets = {
         { dx = -220, dy = -110 },
@@ -1096,8 +1188,8 @@ local function triggerOpportunityClick(opportunityCard)
     local remaining = math.max(0, math.floor(opportunityCard.insightsRemaining or 0))
     local clickIndex = OPPORTUNITY_CLICK_LIMIT - remaining + 1
     local burst = burstTargets[math.min(math.max(clickIndex, 1), #burstTargets)]
-    local targetX = clamp(originX + burst.dx, 0, APP_WIDTH - CARD_WIDTH)
-    local targetY = clamp(originY + burst.dy, 0, APP_HEIGHT - CARD_HEIGHT)
+    local targetX = clamp(originX + burst.dx, 0, WORLD_WIDTH - CARD_WIDTH)
+    local targetY = clamp(originY + burst.dy, 0, WORLD_HEIGHT - CARD_HEIGHT)
 
     local quickWinCard = createCard({
         cardType = "feature",
@@ -1126,6 +1218,11 @@ end
 local function configureHotReload()
     HotReload.getState = function()
         serializeCards()
+        state.camera = {
+            x = camera.x,
+            y = camera.y,
+            zoom = camera.zoom,
+        }
         return copyState(state)
     end
 
@@ -1139,11 +1236,19 @@ local function configureHotReload()
         state.time = restored.time or 0
         state.day = restored.day or 1
         state.nextCardId = restored.nextCardId or 1
+        state.camera = restored.camera
 
         if type(restored.cards) == "table" then
             state.cards = restored.cards
         else
             state.cards = nil
+        end
+
+        if type(state.camera) == "table" then
+            camera.x = tonumber(state.camera.x) or camera.x
+            camera.y = tonumber(state.camera.y) or camera.y
+            camera.zoom = clamp(tonumber(state.camera.zoom) or camera.zoom, camera.minZoom, camera.maxZoom)
+            clampCamera()
         end
 
         bootstrapCards()
@@ -1152,6 +1257,7 @@ local function configureHotReload()
         stickyDragMode = false
         dragPressStartScreenX = nil
         dragPressStartScreenY = nil
+        panningWorld = false
     end
 
     HotReload.onReload = function()
@@ -1188,15 +1294,28 @@ function love.load(isReload)
         state.day = 1
         state.nextCardId = 1
         state.cards = nil
+        state.camera = nil
     end
 
     bootstrapCards()
+
+    if type(state.camera) == "table" then
+        camera.x = tonumber(state.camera.x) or camera.x
+        camera.y = tonumber(state.camera.y) or camera.y
+        camera.zoom = clamp(tonumber(state.camera.zoom) or camera.zoom, camera.minZoom, camera.maxZoom)
+    else
+        camera.zoom = 1
+        setCameraCenteredOn(WORLD_WIDTH * 0.5, WORLD_HEIGHT * 0.5)
+    end
+    clampCamera()
 
     draggingCards = {}
     dragRootCard = nil
     stickyDragMode = false
     dragPressStartScreenX = nil
     dragPressStartScreenY = nil
+    panningWorld = false
+    consultingHover = 0
 
     configureHotReload()
 end
@@ -1206,6 +1325,12 @@ function love.update(dt)
 
     local mouseX, mouseY = love.mouse.getPosition()
     local gameX, gameY = screenToGame(mouseX, mouseY)
+    local worldX, worldY = gameToWorld(gameX, gameY)
+
+    local consultingRect = getConsultingRect()
+    local consultingHovered = gameX and gameY and pointInRect(gameX, gameY, consultingRect) or false
+    local consultingRaised = consultingHovered or isConsultingDropActive()
+    consultingHover = damp(consultingHover, consultingRaised and 1 or 0, 18, dt)
 
     updateAttachedCardTargets()
     updateWorkerProgress(dt)
@@ -1215,8 +1340,8 @@ function love.update(dt)
             local pointerX = nil
             local pointerY = nil
             if card:isDragging() then
-                pointerX = gameX
-                pointerY = gameY
+                pointerX = worldX
+                pointerY = worldY
             end
             card:update(dt, pointerX, pointerY)
         end
@@ -1224,6 +1349,11 @@ function love.update(dt)
 
     updatePhysicalCardMotions(dt)
 
+    state.camera = {
+        x = camera.x,
+        y = camera.y,
+        zoom = camera.zoom,
+    }
     serializeCards()
     HotReload:update(dt)
 end
@@ -1232,10 +1362,14 @@ function love.draw()
     Scaling.draw(function()
         local mouseX, mouseY = love.mouse.getPosition()
         local gameX, gameY = screenToGame(mouseX, mouseY)
-        local hoveredPersonCard = getTopHoveredPersonCard(gameX, gameY)
+        local worldX, worldY = gameToWorld(gameX, gameY)
+        local hoveredPersonCard = getTopHoveredPersonCard(worldX, worldY)
+
+        love.graphics.push()
+        love.graphics.scale(camera.zoom, camera.zoom)
+        love.graphics.translate(-camera.x, -camera.y)
 
         drawPaperGrid()
-        drawConsultingZone()
 
         for _, card in ipairs(cards) do
             if not isCardDragging(card) then
@@ -1245,8 +1379,6 @@ function love.draw()
 
         drawWorkBars()
         drawPersonHoverOverlay(hoveredPersonCard)
-        drawNewDayButton()
-
         drawDragStackShadow()
 
         for _, card in ipairs(cards) do
@@ -1254,6 +1386,11 @@ function love.draw()
                 drawCardWithEffects(card, { skipShadow = true })
             end
         end
+
+        love.graphics.pop()
+
+        drawConsultingZone(gameX, gameY)
+        drawNewDayButton()
 
         love.graphics.setFont(Theme.fonts.default)
         HotReload:draw(APP_HEIGHT, Scaling.getScale())
@@ -1294,38 +1431,50 @@ function love.mousepressed(x, y, button)
         return
     end
 
-    if pointInRect(gameX, gameY, NEW_DAY_BUTTON) then
+    if pointInRect(gameX, gameY, getNewDayButtonRect()) then
         startNewDay()
         return
     end
 
+    if pointInRect(gameX, gameY, getConsultingRect()) then
+        return
+    end
+
+    local worldX, worldY = gameToWorld(gameX, gameY)
     local selectedCard = nil
     for i = #cards, 1, -1 do
         local card = cards[i]
-        if not isCardLocked(card) and card:containsPoint(gameX, gameY) then
+        if not isCardLocked(card) and card:containsPoint(worldX, worldY) then
             selectedCard = card
             break
         end
     end
 
     if not selectedCard then
+        panningWorld = true
         return
     end
 
     local selection = { selectedCard }
-    if selectedCard:containsHeaderPoint(gameX, gameY) then
+    if selectedCard:containsHeaderPoint(worldX, worldY) then
         selection = collectStackFrom(selectedCard)
     end
 
     bringCardsToFront(selection)
-    beginDragSelection(selection, gameX, gameY)
+    beginDragSelection(selection, worldX, worldY)
     stickyDragMode = false
     dragPressStartScreenX = x
     dragPressStartScreenY = y
+    panningWorld = false
 end
 
 function love.mousereleased(x, y, button)
     if button ~= 1 then
+        return
+    end
+
+    if panningWorld then
+        panningWorld = false
         return
     end
 
@@ -1361,4 +1510,49 @@ function love.mousereleased(x, y, button)
 
     dragPressStartScreenX = nil
     dragPressStartScreenY = nil
+end
+
+function love.mousemoved(_, _, dx, dy)
+    if not panningWorld then
+        return
+    end
+
+    if not love.mouse.isDown(1) then
+        panningWorld = false
+        return
+    end
+
+    local viewportScale = Scaling.getScale()
+    if viewportScale <= 0 then
+        viewportScale = 1
+    end
+
+    local gameDx = dx / viewportScale
+    local gameDy = dy / viewportScale
+    camera.x = camera.x - (gameDx / camera.zoom)
+    camera.y = camera.y - (gameDy / camera.zoom)
+    clampCamera()
+end
+
+function love.wheelmoved(_, y)
+    if y == 0 then
+        return
+    end
+
+    local mouseX, mouseY = love.mouse.getPosition()
+    local gameX, gameY = screenToGame(mouseX, mouseY)
+    local anchorGameX = gameX or (APP_WIDTH * 0.5)
+    local anchorGameY = gameY or (APP_HEIGHT * 0.5)
+    local anchorWorldX, anchorWorldY = gameToWorld(anchorGameX, anchorGameY)
+
+    local targetZoom = camera.zoom * (camera.zoomStep ^ y)
+    targetZoom = clamp(targetZoom, camera.minZoom, camera.maxZoom)
+    if targetZoom == camera.zoom then
+        return
+    end
+
+    camera.zoom = targetZoom
+    camera.x = anchorWorldX - (anchorGameX / camera.zoom)
+    camera.y = anchorWorldY - (anchorGameY / camera.zoom)
+    clampCamera()
 end
