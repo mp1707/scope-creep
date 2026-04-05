@@ -29,7 +29,7 @@ local BOOSTER_PACK_IMAGE_ASPECT = 400 / 500
 local BOOSTER_PACK_HEIGHT = math.floor(CARD_HEIGHT * 1.089 + 0.5)
 local BOOSTER_PACK_WIDTH = math.floor(BOOSTER_PACK_HEIGHT * BOOSTER_PACK_IMAGE_ASPECT + 0.5)
 
-local STACK_OFFSET_Y = (Card.HEADER_HEIGHT or 34) - 3
+local STACK_OFFSET_Y = (Card.HEADER_HEIGHT or 34) - 7
 local STACK_SNAP_DISTANCE = 80
 local CLICK_ATTACH_THRESHOLD = 6
 local OFFICE_BACKGROUND_PATH = "assets/handdrawn/officebg.png"
@@ -38,7 +38,7 @@ local CONSULTING_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
 local MONEY_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/moneySmall.png"
 
 local WORK_CYCLE_SECONDS = 3
-local WORK_BAR_HEIGHT = 14
+local WORK_BAR_HEIGHT = 28
 local OPPORTUNITY_CLICK_LIMIT = 3
 local OPPORTUNITY_WOBBLE_DURATION = 0.18
 local OPPORTUNITY_WOBBLE_AMPLITUDE = 0.05
@@ -58,10 +58,10 @@ local NEW_DAY_BUTTON = {
 }
 
 local CONSULTING_ZONE = {
-    width = 210,
-    height = 237,
+    width = 147,
+    height = 157,
     marginLeft = 34,
-    visibleHeight = 214,
+    visibleHeight = 142,
     hoverLift = 11,
     cost = 1,
 }
@@ -242,7 +242,8 @@ local function drawConsultingPriceLine(x, y, width, price, viewportScale)
         local iconY = textY + (textHeight - iconHeight) * 0.5
         local iconColor = Theme.colors.icon
         love.graphics.setColor(iconColor[1], iconColor[2], iconColor[3], textA or 1)
-        love.graphics.draw(moneyIcon, iconX, iconY, 0, iconHeight / moneyIcon:getHeight(), iconHeight / moneyIcon:getHeight())
+        love.graphics.draw(moneyIcon, iconX, iconY, 0, iconHeight / moneyIcon:getHeight(),
+            iconHeight / moneyIcon:getHeight())
         love.graphics.setColor(textR, textG, textB, textA)
     end
 end
@@ -1043,7 +1044,7 @@ local function drawWorkBars()
             if activeFeature and not activeFeature:isFeatureComplete() then
                 local barX = workerCard.x
                 local stackTopY = math.min(workerCard.y, activeFeature.y)
-                local barY = stackTopY - WORK_BAR_HEIGHT - 14
+                local barY = stackTopY - WORK_BAR_HEIGHT + 7
 
                 local progress = clamp((workerCard.workProgress or 0) / WORK_CYCLE_SECONDS, 0, 1)
                 local innerPadding = 3
@@ -1286,20 +1287,23 @@ local function drawConsultingZone(gameX, gameY)
     local zoneColors = Theme.colors.consultingZone
     local bodyColor = raised and zoneColors.bodyRaised or zoneColors.body
     local headerColor = raised and zoneColors.headerRaised or zoneColors.header
+    local customHeaderHeight = math.floor((Card.HEADER_HEIGHT or 34) * 1.55)
 
     UiPanel.drawShadow(zone.x, zone.y, zone.width, zone.height, UiShadow.get("panel"))
     UiPanel.drawPanel(zone.x, zone.y, zone.width, zone.height, {
         bodyColor = bodyColor,
         headerColor = headerColor,
-        headerHeight = Card.HEADER_HEIGHT,
+        headerHeight = customHeaderHeight,
         borderColor = zoneColors.border,
     })
 
-    local iconAreaTop = zone.y + Card.HEADER_HEIGHT + 16
-    local iconAreaHeight = zone.height - Card.HEADER_HEIGHT - 22
-    local iconAreaWidth = zone.width - 28
-    local iconSize = math.max(28, math.min(iconAreaWidth, iconAreaHeight))
+    local iconTheme = (Theme.card and Theme.card.icon) or {}
+    -- visually match feature cards which have padded areas
+    local iconSize = math.floor((tonumber(iconTheme.featureSize) or 74) * 0.82)
+    local iconAreaTop = zone.y + customHeaderHeight
+    local iconAreaHeight = zone.height - customHeaderHeight
     local consultingImage = getConsultingZoneImage()
+
     if consultingImage then
         local iconScale = math.min(iconSize / consultingImage:getWidth(), iconSize / consultingImage:getHeight())
         local drawWidth = consultingImage:getWidth() * iconScale
@@ -1313,15 +1317,33 @@ local function drawConsultingZone(gameX, gameY)
 
     love.graphics.setFont(Theme.fonts.cardHeader)
     love.graphics.setColor(zoneColors.text)
+
+    local headerFontRef = love.graphics.getFont()
+    local headerScale = 1 / viewportScale
+    local singleLineHeight = headerFontRef:getHeight() * headerScale
+    local lineSpacing = singleLineHeight * 0.75
+    local totalTextHeight = singleLineHeight + lineSpacing
+    local titleY = zone.y + (customHeaderHeight - totalTextHeight) * 0.5
+
     love.graphics.printf(
-        "Business Consulting",
+        "Business",
         zone.x,
-        zone.y + 5,
+        titleY,
         zone.width * viewportScale,
         "center",
         0,
-        1 / viewportScale,
-        1 / viewportScale
+        headerScale,
+        headerScale
+    )
+    love.graphics.printf(
+        "Consulting",
+        zone.x,
+        titleY + lineSpacing,
+        zone.width * viewportScale,
+        "center",
+        0,
+        headerScale,
+        headerScale
     )
 
     love.graphics.setColor(1, 1, 1, 1)

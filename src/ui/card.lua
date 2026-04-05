@@ -542,7 +542,6 @@ function Card:drawBodyContent(alpha)
             iconAreaHeight,
             math.min(getBodyIconTargetSize(cardType, self.height), iconAreaWidth, iconAreaHeight),
             {
-                flipHorizontal = true,
                 verticalBias = -0.06,
                 alpha = alpha,
             }
