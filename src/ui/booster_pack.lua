@@ -1,19 +1,16 @@
 local Scaling = require("src.core.scaling")
 local Theme = require("src.ui.theme")
+local CardBackground = require("src.ui.card_background")
 
 local BoosterPack = {}
 BoosterPack.__index = BoosterPack
 
-local PACK_IMAGE_PATH = "assets/icons/characters/featur_booster_pack.png"
-local PACK_SPRITE_SCALE = 1.15
 local BADGE_SCALE = 1.5
 local BADGE_OFFSET_X = -10
 local BADGE_OFFSET_Y = -10
-local FEATURE_ICON_PATH = "assets/icons/Golden Star 1st Outline 256px.png"
+local FEATURE_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
 local DEFAULT_TEXT_COLOR = { 0, 0, 0, 1 }
 
-local packImage = nil
-local packImageLoadAttempted = false
 local featureIconImage = nil
 local featureIconLoadAttempted = false
 
@@ -28,22 +25,6 @@ end
 
 local function applyAlpha(color, alphaMultiplier)
     return color[1], color[2], color[3], (color[4] or 1) * alphaMultiplier
-end
-
-local function getPackImage()
-    if packImage or packImageLoadAttempted then
-        return packImage
-    end
-
-    packImageLoadAttempted = true
-    local ok, loadedImage = pcall(love.graphics.newImage, PACK_IMAGE_PATH)
-    if not ok then
-        return nil
-    end
-
-    loadedImage:setFilter("linear", "linear")
-    packImage = loadedImage
-    return packImage
 end
 
 local function getFeatureIconImage()
@@ -66,16 +47,6 @@ local function getFeatureCardIconSize()
     local iconTheme = (Theme.card and Theme.card.icon) or {}
     local size = tonumber(iconTheme.featureSize) or tonumber(iconTheme.bodySize) or 74
     return math.max(32, size)
-end
-
-local function getPackSpriteRect(self, expand, offsetX, offsetY)
-    local grownWidth = self.width * PACK_SPRITE_SCALE
-    local grownHeight = self.height * PACK_SPRITE_SCALE
-    local drawWidth = grownWidth + (expand or 0)
-    local drawHeight = grownHeight + (expand or 0)
-    local drawX = self.x - (grownWidth - self.width) * 0.5 - ((expand or 0) * 0.5) + (offsetX or 0)
-    local drawY = self.y - (grownHeight - self.height) * 0.5 - ((expand or 0) * 0.5) + (offsetY or 0)
-    return drawX, drawY, drawWidth, drawHeight
 end
 
 local function drawOpportunityBadge(self, alpha, viewportScale)
@@ -237,35 +208,8 @@ function BoosterPack:getSnapshot()
     }
 end
 
-function BoosterPack:drawShadow(alpha)
-    local effectiveAlpha = (self.shadowAlpha or 0.11) * (alpha or 1)
-    if effectiveAlpha <= 0 then
-        return
-    end
-
-    local image = getPackImage()
-    local shadowExpand = self.shadowExpand or 0
-    local shadowOffsetX = self.shadowOffsetX or 4
-    local shadowOffsetY = self.shadowOffsetY or 4
-
-    if image then
-        local drawX, drawY, drawWidth, drawHeight = getPackSpriteRect(self, shadowExpand, shadowOffsetX, shadowOffsetY)
-        local scaleX = drawWidth / image:getWidth()
-        local scaleY = drawHeight / image:getHeight()
-        love.graphics.setColor(0, 0, 0, effectiveAlpha)
-        love.graphics.draw(image, drawX, drawY, 0, scaleX, scaleY)
-        return
-    end
-
-    local shadowColor = Theme.colors.cardShadow or DEFAULT_TEXT_COLOR
-    love.graphics.setColor(shadowColor[1], shadowColor[2], shadowColor[3], effectiveAlpha)
-    love.graphics.rectangle(
-        "fill",
-        self.x - shadowExpand * 0.5 + shadowOffsetX,
-        self.y - shadowExpand * 0.5 + shadowOffsetY,
-        self.width + shadowExpand,
-        self.height + shadowExpand
-    )
+function BoosterPack:drawShadow()
+    return
 end
 
 function BoosterPack:draw(_, options)
@@ -277,25 +221,12 @@ function BoosterPack:draw(_, options)
     local centerY = self.y + self.height * 0.5
     local drawScale = self.scale * extraScale
     local drawRotation = self.rotation or 0
-    local image = getPackImage()
 
     love.graphics.push()
     love.graphics.translate(centerX, centerY)
     love.graphics.rotate(drawRotation)
     love.graphics.scale(drawScale, drawScale)
     love.graphics.translate(-centerX, -centerY)
-
-    if not options.skipShadow then
-        self:drawShadow(alpha)
-    end
-
-    if image then
-        local drawX, drawY, drawWidth, drawHeight = getPackSpriteRect(self)
-        local scaleX = drawWidth / image:getWidth()
-        local scaleY = drawHeight / image:getHeight()
-        love.graphics.setColor(1, 1, 1, alpha)
-        love.graphics.draw(image, drawX, drawY, 0, scaleX, scaleY)
-    end
 
     local viewportScale = Scaling.getScale()
     if viewportScale <= 0 then
@@ -304,6 +235,9 @@ function BoosterPack:draw(_, options)
 
     local style = Theme.cardStyles and Theme.cardStyles.opportunity
     local textColor = style and style.textColor or DEFAULT_TEXT_COLOR
+
+    CardBackground.draw(self.x, self.y, self.width, self.height, alpha)
+
     local font = love.graphics.getFont()
     local lineHeight = font:getHeight() / viewportScale
     local verticalGap = math.max(4, lineHeight * 0.22)

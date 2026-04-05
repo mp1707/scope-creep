@@ -1,13 +1,11 @@
 local Scaling = require("src.core.scaling")
 local Theme = require("src.ui.theme")
+local CardBackground = require("src.ui.card_background")
 
 local Card = {}
 Card.__index = Card
 Card.HEADER_HEIGHT = 40
 
-local CARD_CORNER_RADIUS = 8
-local CARD_BORDER_WIDTH = 3
-local CARD_SEPARATOR_WIDTH = 3
 local CARD_PADDING = 11
 local FOOTER_HEIGHT = 26
 local FEATURE_PIP_SIZE = 10
@@ -15,19 +13,13 @@ local FEATURE_PIP_GAP = 4
 
 local CARD_BODY_ASPECT_WIDTH = 300
 local CARD_BODY_ASPECT_HEIGHT = 350
-local OPPORTUNITY_BACKGROUND_SCALE = 1.1
 
-local MONEY_ICON_PATH = "assets/icons/Green Cash 1st Outline 256px.png"
-local FEATURE_ICON_PATH = "assets/icons/Golden Star 1st Outline 256px.png"
-local OPPORTUNITY_BACKGROUND_PATH = "assets/icons/characters/featur_booster_pack.png"
-local EVENT_ICON_PATH = "assets/icons/Newspaper 1st Outline 256px.png"
-local PROBLEM_ICON_PATH = "assets/icons/Warning 1st Outline 256px.png"
-local SUPPORT_ICON_PATH = "assets/icons/Blue Pencil 1st Outline 256px.png"
-local DEFAULT_ICON_PATH = "assets/icons/Question Mark 1st Outline 256px.png"
+local MONEY_ICON_PATH = "assets/handdrawn/cardIcons/money.png"
+local FEATURE_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
+local DEFAULT_ICON_PATH = FEATURE_ICON_PATH
 
 local cardIconImageCache = {}
 local cardIconLoadAttempted = {}
-local coverQuadCache = setmetatable({}, { __mode = "k" })
 
 local DEFAULT_STYLES = Theme.cardStyles
 
@@ -65,69 +57,8 @@ local function getCardIconImage(iconPath)
     return loadedImage
 end
 
-local function getOpportunityBackgroundImage()
-    return getCardIconImage(OPPORTUNITY_BACKGROUND_PATH)
-end
-
 local function getFeatureIconImage()
     return getCardIconImage(FEATURE_ICON_PATH)
-end
-
-local function drawImageCover(image, x, y, width, height, alpha, tintR, tintG, tintB)
-    local imageWidth = image:getWidth()
-    local imageHeight = image:getHeight()
-    if imageWidth <= 0 or imageHeight <= 0 or width <= 0 or height <= 0 then
-        return
-    end
-
-    local scale = math.max(width / imageWidth, height / imageHeight)
-    local sourceWidth = width / scale
-    local sourceHeight = height / scale
-    local sourceX = (imageWidth - sourceWidth) * 0.5
-    local sourceY = (imageHeight - sourceHeight) * 0.5
-
-    local quad = coverQuadCache[image]
-    if not quad then
-        quad = love.graphics.newQuad(0, 0, 1, 1, imageWidth, imageHeight)
-        coverQuadCache[image] = quad
-    end
-    quad:setViewport(sourceX, sourceY, sourceWidth, sourceHeight, imageWidth, imageHeight)
-
-    love.graphics.setColor(tintR or 1, tintG or 1, tintB or 1, alpha or 1)
-    love.graphics.draw(
-        image,
-        quad,
-        x,
-        y,
-        0,
-        width / sourceWidth,
-        height / sourceHeight
-    )
-end
-
-local function drawImageContain(image, x, y, width, height, alpha, tintR, tintG, tintB)
-    local imageWidth = image:getWidth()
-    local imageHeight = image:getHeight()
-    if imageWidth <= 0 or imageHeight <= 0 or width <= 0 or height <= 0 then
-        return
-    end
-
-    local scale = math.min(width / imageWidth, height / imageHeight)
-    local drawWidth = imageWidth * scale
-    local drawHeight = imageHeight * scale
-    local drawX = x + (width - drawWidth) * 0.5
-    local drawY = y + (height - drawHeight) * 0.5
-
-    love.graphics.setColor(tintR or 1, tintG or 1, tintB or 1, alpha or 1)
-    love.graphics.draw(image, drawX, drawY, 0, scale, scale)
-end
-
-local function getOpportunityBackgroundRect(card)
-    local drawWidth = card.width * OPPORTUNITY_BACKGROUND_SCALE
-    local drawHeight = card.height * OPPORTUNITY_BACKGROUND_SCALE
-    local drawX = card.x - (drawWidth - card.width) * 0.5
-    local drawY = card.y - (drawHeight - card.height) * 0.5
-    return drawX, drawY, drawWidth, drawHeight
 end
 
 local function fitTextToWidth(text, maxWidth, font, scale)
@@ -229,15 +160,6 @@ local function getDefaultHeroIconPath(cardType)
     if cardType == "money" or cardType == "resource" then
         return MONEY_ICON_PATH
     end
-    if cardType == "problem" or cardType == "bug" then
-        return PROBLEM_ICON_PATH
-    end
-    if cardType == "support" or cardType == "tooling" then
-        return SUPPORT_ICON_PATH
-    end
-    if cardType == "opportunity" or cardType == "event" or cardType == "management" then
-        return EVENT_ICON_PATH
-    end
     return DEFAULT_ICON_PATH
 end
 
@@ -308,24 +230,6 @@ local function drawIconInArea(image, areaX, areaY, areaWidth, areaHeight, target
     else
         love.graphics.draw(image, drawX, drawY, 0, iconScale, iconScale)
     end
-end
-
-local function drawTopRoundedHeader(x, y, width, height, radius)
-    if height <= 0 then
-        return
-    end
-
-    local r = math.max(0, math.min(radius or 0, width * 0.5, height))
-    if r <= 0 then
-        love.graphics.rectangle("fill", x, y, width, height)
-        return
-    end
-
-    local capHeight = math.min(r, height)
-    love.graphics.rectangle("fill", x, y + capHeight, width, height - capHeight)
-    love.graphics.rectangle("fill", x + r, y, math.max(0, width - (r * 2)), capHeight)
-    love.graphics.circle("fill", x + r, y + r, r)
-    love.graphics.circle("fill", x + width - r, y + r, r)
 end
 
 local function drawOpportunityBadge(card, alpha)
@@ -579,12 +483,6 @@ function Card:drawBodyContent(alpha)
             viewportScale = 1
         end
 
-        local opportunityBackground = getOpportunityBackgroundImage()
-        if opportunityBackground then
-            local drawX, drawY, drawWidth, drawHeight = getOpportunityBackgroundRect(self)
-            drawImageContain(opportunityBackground, drawX, drawY, drawWidth, drawHeight, alpha)
-        end
-
         local font = love.graphics.getFont()
         local lineHeight = font:getHeight() / viewportScale
         local verticalGap = math.max(4, lineHeight * 0.22)
@@ -642,11 +540,11 @@ function Card:drawBodyContent(alpha)
     if cardType == "person" or cardType == "developer" then
         drawIconInArea(
             icon,
-            self.x + CARD_PADDING,
+            iconAreaX,
             iconAreaY,
-            self.width - CARD_PADDING * 2,
+            iconAreaWidth,
             iconAreaHeight,
-            getBodyIconTargetSize(cardType, self.height),
+            math.min(getBodyIconTargetSize(cardType, self.height), iconAreaWidth, iconAreaHeight),
             {
                 flipHorizontal = true,
                 verticalBias = -0.06,
@@ -656,7 +554,7 @@ function Card:drawBodyContent(alpha)
         return
     end
 
-    local iconTarget = getBodyIconTargetSize(cardType, self.height)
+    local iconTarget = math.min(getBodyIconTargetSize(cardType, self.height), iconAreaWidth, iconAreaHeight)
     local verticalBias = -0.08
     if cardType == "money" or cardType == "resource" then
         verticalBias = -0.05
@@ -833,50 +731,6 @@ function Card:drawFooterInfo(viewportScale, bodyFont, valueFont, alpha)
     end
 end
 
-function Card:drawShadow(alpha)
-    local effectiveAlpha = (self.shadowAlpha or 0.11) * (alpha or 1)
-    if effectiveAlpha <= 0 then
-        return
-    end
-
-    local shadowExpand = self.shadowExpand or 0
-    local shadowOffsetX = self.shadowOffsetX or 4
-    local shadowOffsetY = self.shadowOffsetY or 4
-
-    if self.cardType == "opportunity" then
-        local backgroundImage = getOpportunityBackgroundImage()
-        if not backgroundImage then
-            return
-        end
-
-        local drawX, drawY, drawWidth, drawHeight = getOpportunityBackgroundRect(self)
-        drawImageContain(
-            backgroundImage,
-            drawX - shadowExpand * 0.5 + shadowOffsetX,
-            drawY - shadowExpand * 0.5 + shadowOffsetY,
-            drawWidth + shadowExpand,
-            drawHeight + shadowExpand,
-            effectiveAlpha,
-            0,
-            0,
-            0
-        )
-        return
-    end
-
-    local shadowColor = Theme.colors.cardShadow
-    love.graphics.setColor(shadowColor[1], shadowColor[2], shadowColor[3], effectiveAlpha)
-    love.graphics.rectangle(
-        "fill",
-        self.x - shadowExpand * 0.5 + shadowOffsetX,
-        self.y - shadowExpand * 0.5 + shadowOffsetY,
-        self.width + shadowExpand,
-        self.height + shadowExpand,
-        CARD_CORNER_RADIUS,
-        CARD_CORNER_RADIUS
-    )
-end
-
 function Card:draw(headerFont, options)
     options = options or {}
 
@@ -897,35 +751,8 @@ function Card:draw(headerFont, options)
     love.graphics.scale(drawScale, drawScale)
     love.graphics.translate(-centerX, -centerY)
 
-    if not options.skipShadow then
-        self:drawShadow(alpha)
-    end
-
-    local borderColor = self:getStyleColor("borderColor")
     local textColor = self:getStyleColor("textColor")
-    local bodyColor = self:getStyleColor("bodyColor")
-    local headerColor = self:getStyleColor("headerColor")
     local headerHeight = Card.HEADER_HEIGHT
-
-    if not isOpportunity then
-        love.graphics.setColor(applyAlpha(bodyColor, alpha))
-        love.graphics.rectangle("fill", self.x, self.y, self.width, self.height, CARD_CORNER_RADIUS, CARD_CORNER_RADIUS)
-
-        love.graphics.setColor(applyAlpha(headerColor, alpha))
-        drawTopRoundedHeader(self.x, self.y, self.width, headerHeight, CARD_CORNER_RADIUS)
-
-        love.graphics.setColor(applyAlpha(borderColor, alpha))
-        love.graphics.setLineWidth(CARD_BORDER_WIDTH)
-        love.graphics.rectangle(
-            "line",
-            self.x,
-            self.y,
-            self.width,
-            self.height,
-            CARD_CORNER_RADIUS,
-            CARD_CORNER_RADIUS
-        )
-    end
 
     local viewportScale = Scaling.getScale()
     if viewportScale <= 0 then
@@ -935,6 +762,8 @@ function Card:draw(headerFont, options)
     if headerFont then
         love.graphics.setFont(headerFont)
     end
+
+    CardBackground.draw(self.x, self.y, self.width, self.height, alpha)
 
     if not isOpportunity then
         local headerFontRef = love.graphics.getFont()
@@ -946,14 +775,6 @@ function Card:draw(headerFont, options)
         love.graphics.setColor(applyAlpha(textColor, alpha))
         love.graphics.print(titleText, self.x + CARD_PADDING, titleY, 0, headerScale, headerScale)
 
-        love.graphics.setColor(applyAlpha(borderColor, alpha))
-        love.graphics.setLineWidth(CARD_SEPARATOR_WIDTH)
-        love.graphics.line(
-            self.x + CARD_BORDER_WIDTH * 0.5,
-            self.y + headerHeight,
-            self.x + self.width - CARD_BORDER_WIDTH * 0.5,
-            self.y + headerHeight
-        )
     end
 
     self:drawIndicators(alpha)

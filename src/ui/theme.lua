@@ -209,6 +209,22 @@ Theme.card = {
         problemSize = 84,
         supportSize = 82,
     },
+    background9slice = {
+        -- Keep this centralized so future asset renames only change one path.
+        path = "assets/handdrawn/borders/cardBorder9slice.png",
+        sourceX = 24,
+        sourceY = 24,
+        sourceWidth = 205,
+        sourceHeight = 211,
+        sourceLeft = 16,
+        sourceRight = 16,
+        sourceTop = 16,
+        sourceBottom = 16,
+        drawLeft = 6,
+        drawRight = 6,
+        drawTop = 6,
+        drawBottom = 6,
+    },
 }
 
 local FONT_DEFS = {

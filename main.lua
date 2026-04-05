@@ -17,9 +17,6 @@ local state = {
     camera = nil,
 }
 
-local GRID_SIZE = 30
-local GRID_COLOR = Theme.colors.gridLine
-
 local CARD_BODY_ASPECT_WIDTH = 300
 local CARD_BODY_ASPECT_HEIGHT = 350
 local CARD_WIDTH = 150
@@ -32,9 +29,10 @@ local BOOSTER_PACK_WIDTH = math.floor(BOOSTER_PACK_HEIGHT * BOOSTER_PACK_IMAGE_A
 local STACK_OFFSET_Y = (Card.HEADER_HEIGHT or 34) - 3
 local STACK_SNAP_DISTANCE = 80
 local CLICK_ATTACH_THRESHOLD = 6
-local STEVE_ICON_PATH = "assets/icons/characters/stressed.png"
-local CONSULTING_ICON_PATH = "assets/icons/characters/consulting.png"
-local MONEY_ICON_PATH = "assets/icons/Green Cash 1st Outline 256px.png"
+local OFFICE_BACKGROUND_PATH = "assets/handdrawn/officebg.png"
+local STEVE_ICON_PATH = "assets/handdrawn/characters/steve.png"
+local CONSULTING_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
+local MONEY_ICON_PATH = "assets/handdrawn/cardIcons/money.png"
 
 local WORK_CYCLE_SECONDS = 3
 local WORK_BAR_HEIGHT = 14
@@ -79,6 +77,8 @@ local camera = {
 local consultingHover = 0
 local consultingZoneImage = nil
 local consultingZoneLoadAttempted = false
+local officeBackgroundImage = nil
+local officeBackgroundLoadAttempted = false
 local moneyIconImage = nil
 local moneyIconLoadAttempted = false
 local coverQuadCache = setmetatable({}, { __mode = "k" })
@@ -133,6 +133,23 @@ local function getConsultingZoneImage()
     loadedImage:setFilter("linear", "linear")
     consultingZoneImage = loadedImage
     return consultingZoneImage
+end
+
+local function getOfficeBackgroundImage()
+    if officeBackgroundImage or officeBackgroundLoadAttempted then
+        return officeBackgroundImage
+    end
+
+    officeBackgroundLoadAttempted = true
+
+    local ok, loadedImage = pcall(love.graphics.newImage, OFFICE_BACKGROUND_PATH)
+    if not ok then
+        return nil
+    end
+
+    loadedImage:setFilter("linear", "linear")
+    officeBackgroundImage = loadedImage
+    return officeBackgroundImage
 end
 
 local function getMoneyIconImage()
@@ -649,17 +666,17 @@ local function drawDragStackShadow()
     )
 end
 
-local function drawPaperGrid()
-    for x = 0, WORLD_WIDTH, GRID_SIZE do
-        love.graphics.setColor(GRID_COLOR)
-        love.graphics.line(x, 0, x, WORLD_HEIGHT)
+local function drawOfficeBackground()
+    local backgroundImage = getOfficeBackgroundImage()
+    if backgroundImage then
+        love.graphics.setColor(1, 1, 1, 1)
+        drawImageCover(backgroundImage, 0, 0, WORLD_WIDTH, WORLD_HEIGHT)
+        return
     end
 
-    for y = 0, WORLD_HEIGHT, GRID_SIZE do
-        love.graphics.setColor(GRID_COLOR)
-        love.graphics.line(0, y, WORLD_WIDTH, y)
-    end
-
+    local fallbackColor = Theme.colors.background
+    love.graphics.setColor(fallbackColor[1], fallbackColor[2], fallbackColor[3], fallbackColor[4] or 1)
+    love.graphics.rectangle("fill", 0, 0, WORLD_WIDTH, WORLD_HEIGHT)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -1611,7 +1628,7 @@ function love.draw()
         love.graphics.scale(camera.zoom, camera.zoom)
         love.graphics.translate(-camera.x, -camera.y)
 
-        drawPaperGrid()
+        drawOfficeBackground()
 
         for _, card in ipairs(cards) do
             if not isCardDragging(card) then
