@@ -10,10 +10,14 @@ BoosterPack.__index = BoosterPack
 local BADGE_SIZE = 34
 local BADGE_INSET = 6
 local FEATURE_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
+local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/scribbleCricle.png"
 local DEFAULT_TEXT_COLOR = Theme.colors.textPrimary
 
 local featureIconImage = nil
 local featureIconLoadAttempted = false
+
+local circleBgIconImage = nil
+local circleBgIconLoadAttempted = false
 
 local function clamp(value, minValue, maxValue)
     return math.max(minValue, math.min(maxValue, value))
@@ -42,6 +46,22 @@ local function getFeatureIconImage()
     loadedImage:setFilter("linear", "linear")
     featureIconImage = loadedImage
     return featureIconImage
+end
+
+local function getCircleBgIconImage()
+    if circleBgIconImage or circleBgIconLoadAttempted then
+        return circleBgIconImage
+    end
+
+    circleBgIconLoadAttempted = true
+    local ok, loadedImage = pcall(love.graphics.newImage, CIRCLE_BG_ICON_PATH)
+    if not ok then
+        return nil
+    end
+
+    loadedImage:setFilter("linear", "linear")
+    circleBgIconImage = loadedImage
+    return circleBgIconImage
 end
 
 local function getFeatureCardIconSize()
@@ -267,6 +287,19 @@ function BoosterPack:draw(_, options)
 
     local featureIcon = getFeatureIconImage()
     if featureIcon then
+        local circleImage = getCircleBgIconImage()
+        if circleImage then
+            local headerColor = Theme.cardStyles.opportunity.headerColor
+            local targetSize = iconSize * 0.9
+            local cScale = math.min(targetSize / circleImage:getWidth(), targetSize / circleImage:getHeight())
+            local cWidth = circleImage:getWidth() * cScale
+            local cHeight = circleImage:getHeight() * cScale
+            local cX = self.x + (self.width - cWidth) * 0.5
+            local cY = iconY + (iconSize - cHeight) * 0.5
+            love.graphics.setColor(headerColor[1], headerColor[2], headerColor[3], alpha)
+            love.graphics.draw(circleImage, cX, cY, 0, cScale, cScale)
+        end
+
         local iconScale = math.min(iconSize / featureIcon:getWidth(), iconSize / featureIcon:getHeight())
         local drawWidth = featureIcon:getWidth() * iconScale
         local drawHeight = featureIcon:getHeight() * iconScale

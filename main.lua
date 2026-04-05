@@ -36,6 +36,7 @@ local OFFICE_BACKGROUND_PATH = "assets/handdrawn/officebg.png"
 local STEVE_ICON_PATH = "assets/handdrawn/characters/steve.png"
 local CONSULTING_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
 local MONEY_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/moneySmall.png"
+local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/scribbleCricle.png"
 
 local WORK_CYCLE_SECONDS = 3
 local WORK_BAR_HEIGHT = 28
@@ -136,6 +137,26 @@ local function getConsultingZoneImage()
     loadedImage:setFilter("linear", "linear")
     consultingZoneImage = loadedImage
     return consultingZoneImage
+end
+
+local circleBgIconImage = nil
+local circleBgIconLoadAttempted = false
+
+local function getCircleBgIconImage()
+    if circleBgIconImage or circleBgIconLoadAttempted then
+        return circleBgIconImage
+    end
+
+    circleBgIconLoadAttempted = true
+
+    local ok, loadedImage = pcall(love.graphics.newImage, CIRCLE_BG_ICON_PATH)
+    if not ok then
+        return nil
+    end
+
+    loadedImage:setFilter("linear", "linear")
+    circleBgIconImage = loadedImage
+    return circleBgIconImage
 end
 
 local function getOfficeBackgroundImage()
@@ -1305,6 +1326,18 @@ local function drawConsultingZone(gameX, gameY)
     local consultingImage = getConsultingZoneImage()
 
     if consultingImage then
+        local circleImage = getCircleBgIconImage()
+        if circleImage then
+            local targetSize = iconSize * 0.9
+            local cScale = math.min(targetSize / circleImage:getWidth(), targetSize / circleImage:getHeight())
+            local cWidth = circleImage:getWidth() * cScale
+            local cHeight = circleImage:getHeight() * cScale
+            local cX = zone.x + (zone.width - cWidth) * 0.5
+            local cY = iconAreaTop + (iconAreaHeight - cHeight) * 0.5
+            love.graphics.setColor(headerColor[1], headerColor[2], headerColor[3], 1)
+            love.graphics.draw(circleImage, cX, cY, 0, cScale, cScale)
+        end
+
         local iconScale = math.min(iconSize / consultingImage:getWidth(), iconSize / consultingImage:getHeight())
         local drawWidth = consultingImage:getWidth() * iconScale
         local drawHeight = consultingImage:getHeight() * iconScale

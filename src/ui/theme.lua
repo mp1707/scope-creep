@@ -40,6 +40,7 @@ Theme.palette = {
     blue = hexColor("#84B4E6"),
     red = hexColor("#E38B7E"),
     green = hexColor("#8BC18D"),
+    greenSoft = hexColor("#D2EDD5"),
 }
 
 Theme.colors = {
@@ -109,7 +110,7 @@ Theme.cardStyles = {
         textColor = Theme.palette.ink,
     },
     money = {
-        bodyColor = Theme.palette.featureBodySoft,
+        bodyColor = Theme.palette.greenSoft,
         headerColor = Theme.palette.green,
         borderColor = Theme.palette.ink,
         textColor = Theme.palette.ink,
@@ -151,13 +152,13 @@ Theme.cardStyles = {
         textColor = Theme.palette.ink,
     },
     support = {
-        bodyColor = Theme.palette.featureBodySoft,
+        bodyColor = Theme.palette.greenSoft,
         headerColor = Theme.palette.green,
         borderColor = Theme.palette.ink,
         textColor = Theme.palette.ink,
     },
     tooling = {
-        bodyColor = Theme.palette.featureBodySoft,
+        bodyColor = Theme.palette.greenSoft,
         headerColor = Theme.palette.green,
         borderColor = Theme.palette.ink,
         textColor = Theme.palette.ink,

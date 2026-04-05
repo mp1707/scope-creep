@@ -21,6 +21,7 @@ local MONEY_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/moneySmall.png"
 local FEATURE_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
 local DOT_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/dotSmall.png"
 local DEFAULT_ICON_PATH = FEATURE_ICON_PATH
+local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/scribbleCricle.png"
 
 local cardIconImageCache = {}
 local cardIconLoadAttempted = {}
@@ -229,7 +230,7 @@ local function drawIconInArea(image, areaX, areaY, areaWidth, areaHeight, target
     local drawX = areaX + (areaWidth - drawWidth) * 0.5
     local drawY = areaY + (freeY * 0.5) + (freeY * verticalBias)
 
-    local tint = Theme.colors.icon
+    local tint = options.tint or Theme.colors.icon
     love.graphics.setColor(tint[1], tint[2], tint[3], alpha)
     if flipHorizontal then
         love.graphics.draw(image, drawX + drawWidth, drawY, 0, -iconScale, iconScale)
@@ -534,13 +535,34 @@ function Card:drawBodyContent(alpha)
     end
 
     if cardType == "person" or cardType == "developer" then
+        local targetSize = math.min(getBodyIconTargetSize(cardType, self.height), iconAreaWidth, iconAreaHeight)
+
+        local circleImage = getCardIconImage(CIRCLE_BG_ICON_PATH)
+        if circleImage then
+            local headerColor = self:getStyleColor("headerColor")
+            local circleTint = { headerColor[1], headerColor[2], headerColor[3], 1 }
+            drawIconInArea(
+                circleImage,
+                iconAreaX,
+                iconAreaY,
+                iconAreaWidth,
+                iconAreaHeight,
+                targetSize * 0.9,
+                {
+                    verticalBias = -0.06,
+                    alpha = alpha,
+                    tint = circleTint
+                }
+            )
+        end
+
         drawIconInArea(
             icon,
             iconAreaX,
             iconAreaY,
             iconAreaWidth,
             iconAreaHeight,
-            math.min(getBodyIconTargetSize(cardType, self.height), iconAreaWidth, iconAreaHeight),
+            targetSize,
             {
                 verticalBias = -0.06,
                 alpha = alpha,
@@ -555,6 +577,25 @@ function Card:drawBodyContent(alpha)
         verticalBias = -0.05
     elseif cardType == "feature" then
         verticalBias = -0.1
+    end
+
+    local circleImage = getCardIconImage(CIRCLE_BG_ICON_PATH)
+    if circleImage then
+        local headerColor = self:getStyleColor("headerColor")
+        local circleTint = { headerColor[1], headerColor[2], headerColor[3], 1 }
+        drawIconInArea(
+            circleImage,
+            iconAreaX,
+            iconAreaY,
+            iconAreaWidth,
+            iconAreaHeight,
+            iconTarget * 0.9,
+            {
+                verticalBias = verticalBias,
+                alpha = alpha,
+                tint = circleTint
+            }
+        )
     end
 
     drawIconInArea(
@@ -788,7 +829,6 @@ function Card:draw(headerFont, options)
 
         love.graphics.setColor(applyAlpha(textColor, alpha))
         love.graphics.print(titleText, self.x + CARD_PADDING, titleY, 0, headerScale, headerScale)
-
     end
 
     self:drawIndicators(alpha)
