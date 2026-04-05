@@ -1,69 +1,34 @@
 local Theme = require("src.ui.theme")
-local NineSlice = require("src.ui.nine_slice")
+local UiPanel = require("src.ui.ui_panel")
 
 local CardBackground = {}
 
-local DEFAULT_CONFIG = {
-    path = "assets/handdrawn/borders/cardBorder9slice.png",
-    sourceX = 24,
-    sourceY = 24,
-    sourceWidth = 205,
-    sourceHeight = 211,
-    sourceLeft = 16,
-    sourceRight = 16,
-    sourceTop = 16,
-    sourceBottom = 16,
-    drawLeft = 6,
-    drawRight = 6,
-    drawTop = 6,
-    drawBottom = 6,
-}
+function CardBackground.draw(x, y, width, height, alpha, options)
+    options = options or {}
 
-function CardBackground.getConfig()
-    local cardTheme = Theme.card or {}
-    local configured = cardTheme.background9slice or {}
+    local bodyColor = options.bodyColor or Theme.cardStyles.default.bodyColor
+    local headerColor = options.headerColor
+    local headerHeight = tonumber(options.headerHeight) or 0
+    local borderColor = options.borderColor or Theme.colors.borderStrong
 
-    return {
-        path = configured.path or DEFAULT_CONFIG.path,
-        sourceX = tonumber(configured.sourceX) or DEFAULT_CONFIG.sourceX,
-        sourceY = tonumber(configured.sourceY) or DEFAULT_CONFIG.sourceY,
-        sourceWidth = tonumber(configured.sourceWidth) or DEFAULT_CONFIG.sourceWidth,
-        sourceHeight = tonumber(configured.sourceHeight) or DEFAULT_CONFIG.sourceHeight,
-        sourceLeft = tonumber(configured.sourceLeft) or DEFAULT_CONFIG.sourceLeft,
-        sourceRight = tonumber(configured.sourceRight) or DEFAULT_CONFIG.sourceRight,
-        sourceTop = tonumber(configured.sourceTop) or DEFAULT_CONFIG.sourceTop,
-        sourceBottom = tonumber(configured.sourceBottom) or DEFAULT_CONFIG.sourceBottom,
-        drawLeft = tonumber(configured.drawLeft) or DEFAULT_CONFIG.drawLeft,
-        drawRight = tonumber(configured.drawRight) or DEFAULT_CONFIG.drawRight,
-        drawTop = tonumber(configured.drawTop) or DEFAULT_CONFIG.drawTop,
-        drawBottom = tonumber(configured.drawBottom) or DEFAULT_CONFIG.drawBottom,
-    }
-end
+    UiPanel.drawSurface(x, y, width, height, bodyColor, { alpha = alpha })
 
-function CardBackground.draw(x, y, width, height, alpha)
-    local config = CardBackground.getConfig()
-    return NineSlice.draw(
-        config.path,
-        x,
-        y,
-        width,
-        height,
-        {
-            sourceX = config.sourceX,
-            sourceY = config.sourceY,
-            sourceWidth = config.sourceWidth,
-            sourceHeight = config.sourceHeight,
-            left = config.sourceLeft,
-            right = config.sourceRight,
-            top = config.sourceTop,
-            bottom = config.sourceBottom,
-            destLeft = config.drawLeft,
-            destRight = config.drawRight,
-            destTop = config.drawTop,
-            destBottom = config.drawBottom,
-            alpha = alpha,
-        }
-    )
+    if headerColor and headerHeight > 0 then
+        UiPanel.drawTopSurfaceOverlay(
+            x,
+            y,
+            width,
+            height,
+            headerHeight,
+            headerColor,
+            {
+                alpha = alpha,
+                bleedBottom = tonumber(options.headerBleedBottom) or 4,
+            }
+        )
+    end
+
+    UiPanel.drawBorder(x, y, width, height, borderColor, { alpha = alpha })
 end
 
 return CardBackground

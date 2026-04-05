@@ -1,15 +1,15 @@
 local Scaling = require("src.core.scaling")
 local Theme = require("src.ui.theme")
 local CardBackground = require("src.ui.card_background")
+local UiPanel = require("src.ui.ui_panel")
 
 local BoosterPack = {}
 BoosterPack.__index = BoosterPack
 
-local BADGE_SCALE = 1.5
-local BADGE_OFFSET_X = -10
-local BADGE_OFFSET_Y = -10
+local BADGE_SIZE = 34
+local BADGE_INSET = 6
 local FEATURE_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
-local DEFAULT_TEXT_COLOR = { 0, 0, 0, 1 }
+local DEFAULT_TEXT_COLOR = Theme.colors.textPrimary
 
 local featureIconImage = nil
 local featureIconLoadAttempted = false
@@ -51,26 +51,25 @@ end
 
 local function drawOpportunityBadge(self, alpha, viewportScale)
     local remaining = math.max(0, math.floor(self.insightsRemaining or 0))
-    local centerX = self.x + self.width + BADGE_OFFSET_X
-    local centerY = self.y + BADGE_OFFSET_Y
-    local radius = 12 * BADGE_SCALE
-
-    love.graphics.setColor(1, 1, 1, alpha)
-    love.graphics.circle("fill", centerX, centerY, radius)
-
-    love.graphics.setColor(0, 0, 0, alpha)
-    love.graphics.setLineWidth(2 * BADGE_SCALE)
-    love.graphics.circle("line", centerX, centerY, radius)
+    local badgeX = self.x + self.width - BADGE_SIZE - BADGE_INSET + 1.5
+    local badgeY = self.y + BADGE_INSET
+    UiPanel.drawPanel(badgeX, badgeY, BADGE_SIZE, BADGE_SIZE, {
+        bodyColor = Theme.palette.featureBody,
+        borderColor = Theme.colors.borderStrong,
+        alpha = alpha,
+    })
 
     local label = tostring(remaining)
+    love.graphics.setFont(Theme.fonts.cardBody)
     local font = love.graphics.getFont()
-    local textScale = BADGE_SCALE / viewportScale
+    local textScale = 1 / viewportScale
     local textWidth = font:getWidth(label) * textScale
     local textHeight = font:getHeight() * textScale
+    love.graphics.setColor(applyAlpha(DEFAULT_TEXT_COLOR, alpha))
     love.graphics.print(
         label,
-        centerX - textWidth * 0.5,
-        centerY - textHeight * 0.5,
+        badgeX + (BADGE_SIZE - textWidth) * 0.5,
+        badgeY + (BADGE_SIZE - textHeight) * 0.5,
         0,
         textScale,
         textScale
@@ -107,9 +106,9 @@ function BoosterPack.new(config)
     self.scale = 1
     self.targetScale = 1
 
-    self.shadowOffsetX = 4
-    self.shadowOffsetY = 4
-    self.shadowAlpha = 0.11
+    self.shadowOffsetX = 2
+    self.shadowOffsetY = 2
+    self.shadowAlpha = 0.08
     self.shadowExpand = 0
 
     self.targetShadowOffsetX = self.shadowOffsetX
@@ -155,19 +154,19 @@ function BoosterPack:beginDrag(px, py, force)
     self.dragOffsetX = px - self.x
     self.dragOffsetY = py - self.y
     self.targetScale = 1.03
-    self.targetShadowOffsetX = 4
-    self.targetShadowOffsetY = 4
-    self.targetShadowAlpha = 0.14
-    self.targetShadowExpand = 0
+    self.targetShadowOffsetX = 8
+    self.targetShadowOffsetY = 10
+    self.targetShadowAlpha = 0.17
+    self.targetShadowExpand = 8
     return true
 end
 
 function BoosterPack:endDrag()
     self.dragging = false
     self.targetScale = 1
-    self.targetShadowOffsetX = 4
-    self.targetShadowOffsetY = 4
-    self.targetShadowAlpha = 0.11
+    self.targetShadowOffsetX = 2
+    self.targetShadowOffsetY = 2
+    self.targetShadowAlpha = 0.08
     self.targetShadowExpand = 0
 end
 
@@ -217,6 +216,7 @@ function BoosterPack:draw(_, options)
 
     local alpha = options.alpha or 1
     local extraScale = options.extraScale or 1
+    local skipShadow = options.skipShadow == true
     local centerX = self.x + self.width * 0.5
     local centerY = self.y + self.height * 0.5
     local drawScale = self.scale * extraScale
@@ -236,7 +236,25 @@ function BoosterPack:draw(_, options)
     local style = Theme.cardStyles and Theme.cardStyles.opportunity
     local textColor = style and style.textColor or DEFAULT_TEXT_COLOR
 
-    CardBackground.draw(self.x, self.y, self.width, self.height, alpha)
+    if not skipShadow then
+        UiPanel.drawShadow(self.x, self.y, self.width, self.height, {
+            alpha = (self.shadowAlpha or 0.08) * alpha,
+            offsetX = self.shadowOffsetX or 0,
+            offsetY = self.shadowOffsetY or 0,
+            expand = self.shadowExpand or 0,
+            destLeft = 10,
+            destRight = 10,
+            destTop = 10,
+            destBottom = 10,
+        })
+    end
+
+    CardBackground.draw(self.x, self.y, self.width, self.height, alpha, {
+        bodyColor = Theme.cardStyles.opportunity.bodyColor,
+        headerColor = Theme.cardStyles.opportunity.headerColor,
+        headerHeight = 0,
+        borderColor = Theme.cardStyles.opportunity.borderColor,
+    })
 
     local font = love.graphics.getFont()
     local lineHeight = font:getHeight() / viewportScale
@@ -267,7 +285,8 @@ function BoosterPack:draw(_, options)
         local drawHeight = featureIcon:getHeight() * iconScale
         local drawX = self.x + (self.width - drawWidth) * 0.5
         local drawY = iconY + (iconSize - drawHeight) * 0.5
-        love.graphics.setColor(1, 1, 1, alpha)
+        local iconColor = Theme.colors.icon
+        love.graphics.setColor(iconColor[1], iconColor[2], iconColor[3], alpha)
         love.graphics.draw(featureIcon, drawX, drawY, 0, iconScale, iconScale)
     end
 

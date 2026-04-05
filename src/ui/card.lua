@@ -1,6 +1,7 @@
 local Scaling = require("src.core.scaling")
 local Theme = require("src.ui.theme")
 local CardBackground = require("src.ui.card_background")
+local UiPanel = require("src.ui.ui_panel")
 
 local Card = {}
 Card.__index = Card
@@ -8,14 +9,16 @@ Card.HEADER_HEIGHT = 40
 
 local CARD_PADDING = 11
 local FOOTER_HEIGHT = 26
-local FEATURE_PIP_SIZE = 10
-local FEATURE_PIP_GAP = 4
+local FEATURE_PIP_SIZE = 15
+local FEATURE_PIP_GAP = -3
 
 local CARD_BODY_ASPECT_WIDTH = 300
 local CARD_BODY_ASPECT_HEIGHT = 350
 
 local MONEY_ICON_PATH = "assets/handdrawn/cardIcons/money.png"
+local MONEY_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/moneySmall.png"
 local FEATURE_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
+local DOT_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/dotSmall.png"
 local DEFAULT_ICON_PATH = FEATURE_ICON_PATH
 
 local cardIconImageCache = {}
@@ -108,7 +111,7 @@ local function drawMoneyAmountWithIcon(amount, x, y, width, options)
     local textWidth = font:getWidth(amountLabel) * fontScale
     local textHeight = font:getHeight() * fontScale
 
-    local moneyIcon = getCardIconImage(MONEY_ICON_PATH)
+    local moneyIcon = getCardIconImage(MONEY_SMALL_ICON_PATH)
     local iconWidth = 0
     local iconHeight = 0
     local gap = 0
@@ -143,7 +146,8 @@ local function drawMoneyAmountWithIcon(amount, x, y, width, options)
         if iconVerticalAlign == "bottom" then
             iconY = y + textHeight - iconHeight
         end
-        love.graphics.setColor(1, 1, 1, textA or 1)
+        local tint = Theme.colors.icon
+        love.graphics.setColor(tint[1], tint[2], tint[3], textA or 1)
         love.graphics.draw(moneyIcon, iconX, iconY, 0, drawScale, drawScale)
         love.graphics.setColor(textR, textG, textB, textA)
     end
@@ -224,7 +228,8 @@ local function drawIconInArea(image, areaX, areaY, areaWidth, areaHeight, target
     local drawX = areaX + (areaWidth - drawWidth) * 0.5
     local drawY = areaY + (freeY * 0.5) + (freeY * verticalBias)
 
-    love.graphics.setColor(1, 1, 1, alpha)
+    local tint = Theme.colors.icon
+    love.graphics.setColor(tint[1], tint[2], tint[3], alpha)
     if flipHorizontal then
         love.graphics.draw(image, drawX + drawWidth, drawY, 0, -iconScale, iconScale)
     else
@@ -238,30 +243,31 @@ local function drawOpportunityBadge(card, alpha)
     end
 
     local remaining = math.max(0, math.floor(card.insightsRemaining or 0))
-    local centerX = card.x + card.width
-    local centerY = card.y
-    local radius = 12
+    local badgeSize = 28
+    local badgeX = card.x + card.width - (badgeSize * 0.35)
+    local badgeY = card.y - (badgeSize * 0.45)
 
     local viewportScale = Scaling.getScale()
     if viewportScale <= 0 then
         viewportScale = 1
     end
 
-    love.graphics.setColor(1, 1, 1, alpha)
-    love.graphics.circle("fill", centerX, centerY, radius)
-
-    love.graphics.setColor(0, 0, 0, alpha)
-    love.graphics.setLineWidth(2)
-    love.graphics.circle("line", centerX, centerY, radius)
+    UiPanel.drawPanel(badgeX, badgeY, badgeSize, badgeSize, {
+        bodyColor = Theme.palette.featureBody,
+        borderColor = Theme.colors.borderStrong,
+        alpha = alpha,
+    })
 
     local label = tostring(remaining)
     local font = love.graphics.getFont()
     local textWidth = font:getWidth(label) / viewportScale
     local textHeight = font:getHeight() / viewportScale
+    local textColor = Theme.colors.textPrimary
+    love.graphics.setColor(applyAlpha(textColor, alpha))
     love.graphics.print(
         label,
-        centerX - textWidth * 0.5,
-        centerY - textHeight * 0.5,
+        badgeX + (badgeSize - textWidth) * 0.5,
+        badgeY + (badgeSize - textHeight) * 0.5,
         0,
         1 / viewportScale,
         1 / viewportScale
@@ -318,9 +324,9 @@ function Card.new(config)
     self.scale = 1
     self.targetScale = 1
 
-    self.shadowOffsetX = 4
-    self.shadowOffsetY = 4
-    self.shadowAlpha = 0.11
+    self.shadowOffsetX = 2
+    self.shadowOffsetY = 2
+    self.shadowAlpha = 0.08
     self.shadowExpand = 0
 
     self.targetShadowOffsetX = self.shadowOffsetX
@@ -393,19 +399,19 @@ function Card:beginDrag(px, py, force)
     self.dragOffsetX = px - self.x
     self.dragOffsetY = py - self.y
     self.targetScale = 1.03
-    self.targetShadowOffsetX = 4
-    self.targetShadowOffsetY = 4
-    self.targetShadowAlpha = 0.14
-    self.targetShadowExpand = 0
+    self.targetShadowOffsetX = 8
+    self.targetShadowOffsetY = 10
+    self.targetShadowAlpha = 0.17
+    self.targetShadowExpand = 8
     return true
 end
 
 function Card:endDrag()
     self.dragging = false
     self.targetScale = 1
-    self.targetShadowOffsetX = 4
-    self.targetShadowOffsetY = 4
-    self.targetShadowAlpha = 0.11
+    self.targetShadowOffsetX = 2
+    self.targetShadowOffsetY = 2
+    self.targetShadowAlpha = 0.08
     self.targetShadowExpand = 0
 end
 
@@ -602,31 +608,34 @@ function Card:drawIndicators(alpha)
         return
     end
 
-    local filledColor = { 0, 0, 0, 1 }
-    local spentInnerColor = { 1, 1, 1, 1 }
-    local spentOutlineColor = { 0, 0, 0, 1 }
-
+    local dotIcon = getCardIconImage(DOT_SMALL_ICON_PATH)
     local startX = self.x + CARD_PADDING + (FEATURE_PIP_SIZE * 0.5)
-    local centerY = self.y + Card.HEADER_HEIGHT + CARD_PADDING + (FEATURE_PIP_SIZE * 0.5)
-    local radius = FEATURE_PIP_SIZE * 0.5
+    local centerY = self.y + Card.HEADER_HEIGHT + CARD_PADDING + (FEATURE_PIP_SIZE * 0.5) - 5
 
     for i = 1, drawTotal do
         local centerX = startX + (i - 1) * (FEATURE_PIP_SIZE + FEATURE_PIP_GAP)
         local isFilled = i <= filled
-        if isFilled then
-            love.graphics.setColor(applyAlpha(filledColor, alpha))
-            love.graphics.circle("fill", centerX, centerY, radius)
-        else
-            love.graphics.setColor(applyAlpha(spentInnerColor, alpha))
-            love.graphics.circle("fill", centerX, centerY, radius)
+        local dotAlpha = isFilled and alpha or (alpha * 0.24)
+        local tint = Theme.colors.icon
 
-            love.graphics.setColor(applyAlpha(spentOutlineColor, alpha))
-            love.graphics.setLineWidth(2)
-            love.graphics.circle("line", centerX, centerY, radius)
+        if dotIcon then
+            local dotScale = FEATURE_PIP_SIZE / math.max(dotIcon:getWidth(), dotIcon:getHeight())
+            local drawWidth = dotIcon:getWidth() * dotScale
+            local drawHeight = dotIcon:getHeight() * dotScale
+            love.graphics.setColor(tint[1], tint[2], tint[3], dotAlpha)
+            love.graphics.draw(
+                dotIcon,
+                centerX - drawWidth * 0.5,
+                centerY - drawHeight * 0.5,
+                0,
+                dotScale,
+                dotScale
+            )
+        else
+            love.graphics.setColor(tint[1], tint[2], tint[3], dotAlpha)
+            love.graphics.points(centerX, centerY)
         end
     end
-
-    love.graphics.setLineWidth(1)
 end
 
 function Card:drawFooterInfo(viewportScale, bodyFont, valueFont, alpha)
@@ -736,6 +745,7 @@ function Card:draw(headerFont, options)
 
     local alpha = options.alpha or 1
     local extraScale = options.extraScale or 1
+    local skipShadow = options.skipShadow == true
     local bodyFont = options.bodyFont
     local valueFont = options.valueFont
 
@@ -763,7 +773,25 @@ function Card:draw(headerFont, options)
         love.graphics.setFont(headerFont)
     end
 
-    CardBackground.draw(self.x, self.y, self.width, self.height, alpha)
+    if not skipShadow then
+        UiPanel.drawShadow(self.x, self.y, self.width, self.height, {
+            alpha = (self.shadowAlpha or 0.08) * alpha,
+            offsetX = self.shadowOffsetX or 0,
+            offsetY = self.shadowOffsetY or 0,
+            expand = self.shadowExpand or 0,
+            destLeft = 10,
+            destRight = 10,
+            destTop = 10,
+            destBottom = 10,
+        })
+    end
+
+    CardBackground.draw(self.x, self.y, self.width, self.height, alpha, {
+        bodyColor = self:getStyleColor("bodyColor"),
+        headerColor = isOpportunity and nil or self:getStyleColor("headerColor"),
+        headerHeight = isOpportunity and 0 or headerHeight,
+        borderColor = self:getStyleColor("borderColor"),
+    })
 
     if not isOpportunity then
         local headerFontRef = love.graphics.getFont()

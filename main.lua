@@ -3,6 +3,8 @@ local Scaling = require("src.core.scaling")
 local Theme = require("src.ui.theme")
 local Card = require("src.ui.card")
 local BoosterPack = require("src.ui.booster_pack")
+local UiPanel = require("src.ui.ui_panel")
+local UiButton = require("src.ui.ui_button")
 
 local APP_WIDTH = 1920
 local APP_HEIGHT = 1080
@@ -32,18 +34,16 @@ local CLICK_ATTACH_THRESHOLD = 6
 local OFFICE_BACKGROUND_PATH = "assets/handdrawn/officebg.png"
 local STEVE_ICON_PATH = "assets/handdrawn/characters/steve.png"
 local CONSULTING_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
-local MONEY_ICON_PATH = "assets/handdrawn/cardIcons/money.png"
+local MONEY_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/moneySmall.png"
 
 local WORK_CYCLE_SECONDS = 3
 local WORK_BAR_HEIGHT = 14
-local WORK_BAR_RADIUS = 8
 local OPPORTUNITY_CLICK_LIMIT = 3
 local OPPORTUNITY_WOBBLE_DURATION = 0.18
 local OPPORTUNITY_WOBBLE_AMPLITUDE = 0.05
 local OPPORTUNITY_WOBBLE_CYCLES = 2.4
 local PERSON_HOVER_MIN_HEIGHT = 32
 local PERSON_HOVER_GAP = 14
-local PERSON_HOVER_RADIUS = 8
 local PERSON_HOVER_PADDING_X = 10
 local PERSON_HOVER_PADDING_Y = 8
 local CONSULTING_HOVER_HEIGHT = 58
@@ -90,6 +90,7 @@ local stickyDragMode = false
 local dragPressStartScreenX = nil
 local dragPressStartScreenY = nil
 local panningWorld = false
+local newDayButtonPressed = false
 
 local consumeMoneyAtConsulting
 local spawnMoneyForFeature
@@ -159,7 +160,7 @@ local function getMoneyIconImage()
 
     moneyIconLoadAttempted = true
 
-    local ok, loadedImage = pcall(love.graphics.newImage, MONEY_ICON_PATH)
+    local ok, loadedImage = pcall(love.graphics.newImage, MONEY_SMALL_ICON_PATH)
     if not ok then
         return nil
     end
@@ -237,7 +238,8 @@ local function drawConsultingPriceLine(x, y, width, price, viewportScale)
     if moneyIcon then
         local iconX = amountX + amountWidth + iconGap
         local iconY = textY + (textHeight - iconHeight) * 0.5
-        love.graphics.setColor(1, 1, 1, textA or 1)
+        local iconColor = Theme.colors.icon
+        love.graphics.setColor(iconColor[1], iconColor[2], iconColor[3], textA or 1)
         love.graphics.draw(moneyIcon, iconX, iconY, 0, iconHeight / moneyIcon:getHeight(), iconHeight / moneyIcon:getHeight())
         love.graphics.setColor(textR, textG, textB, textA)
     end
@@ -655,15 +657,16 @@ local function drawDragStackShadow()
     local shadowOffsetY = shadowSource.shadowOffsetY or 0
     local shadowAlpha = shadowSource.shadowAlpha or 0.11
 
-    local shadowColor = Theme.colors.cardShadow
-    love.graphics.setColor(shadowColor[1], shadowColor[2], shadowColor[3], shadowAlpha)
-    love.graphics.rectangle(
-        "fill",
-        minX - shadowExpand * 0.5 + shadowOffsetX,
-        minY - shadowExpand * 0.5 + shadowOffsetY,
-        (maxX - minX) + shadowExpand,
-        (maxY - minY) + shadowExpand
-    )
+    UiPanel.drawShadow(minX, minY, (maxX - minX), (maxY - minY), {
+        alpha = shadowAlpha,
+        offsetX = shadowOffsetX,
+        offsetY = shadowOffsetY,
+        expand = shadowExpand,
+        destLeft = 10,
+        destRight = 10,
+        destTop = 10,
+        destBottom = 10,
+    })
 end
 
 local function drawOfficeBackground()
@@ -1048,7 +1051,6 @@ end
 
 local function drawWorkBars()
     local workBarColors = Theme.colors.workBar
-    local barRadius = math.min(WORK_BAR_RADIUS, WORK_BAR_HEIGHT * 0.5)
     for _, workerCard in ipairs(cards) do
         if workerCard.cardType == "person" then
             local activeFeature = getDirectChildOfType(workerCard, "feature")
@@ -1060,33 +1062,44 @@ local function drawWorkBars()
                 local progress = clamp((workerCard.workProgress or 0) / WORK_CYCLE_SECONDS, 0, 1)
                 local innerPadding = 3
 
-                love.graphics.setColor(workBarColors.track)
-                love.graphics.rectangle("fill", barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, barRadius, barRadius)
+                UiPanel.drawPanel(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, {
+                    bodyColor = workBarColors.track,
+                    borderColor = workBarColors.border,
+                })
 
-                love.graphics.setColor(workBarColors.border)
-                love.graphics.setLineWidth(3)
-                love.graphics.rectangle("line", barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, barRadius, barRadius)
+                local innerX = barX + innerPadding
+                local innerY = barY + innerPadding
+                local innerWidth = math.max(0, CARD_WIDTH - innerPadding * 2)
+                local innerHeight = math.max(0, WORK_BAR_HEIGHT - innerPadding * 2)
+                local progressWidth = innerWidth * progress
 
-                local progressWidth = (CARD_WIDTH - innerPadding * 2) * progress
-                if progressWidth > 0 then
-                    local innerHeight = WORK_BAR_HEIGHT - innerPadding * 2
-                    local innerRadius = math.max(0, math.min(barRadius - innerPadding, innerHeight * 0.5, progressWidth * 0.5))
-                    love.graphics.setColor(workBarColors.fill)
-                    love.graphics.rectangle(
-                        "fill",
-                        barX + innerPadding,
-                        barY + innerPadding,
-                        progressWidth,
+                if progressWidth > 0 and innerHeight > 0 then
+                    love.graphics.stencil(function()
+                        love.graphics.rectangle("fill", innerX, innerY, progressWidth, innerHeight)
+                    end, "replace", 1)
+                    love.graphics.setStencilTest("equal", 1)
+
+                    -- Draw full-size fill once and reveal only a cropped part.
+                    UiPanel.drawSurface(
+                        innerX,
+                        innerY,
+                        innerWidth,
                         innerHeight,
-                        innerRadius,
-                        innerRadius
+                        workBarColors.border,
+                        {
+                            destLeft = 4,
+                            destRight = 4,
+                            destTop = 4,
+                            destBottom = 4,
+                        }
                     )
+
+                    love.graphics.setStencilTest()
                 end
             end
         end
     end
 
-    love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -1142,14 +1155,19 @@ local function drawPersonHoverOverlay(card)
     local overlayY = math.max(8, card.y - overlayHeight - PERSON_HOVER_GAP)
     local textY = overlayY + math.max(PERSON_HOVER_PADDING_Y, (overlayHeight - textHeight) * 0.5)
 
-    love.graphics.setColor(hoverColors.fill)
-    love.graphics.rectangle("fill", overlayX, overlayY, card.width, overlayHeight, PERSON_HOVER_RADIUS,
-        PERSON_HOVER_RADIUS)
-
-    love.graphics.setColor(hoverColors.border)
-    love.graphics.setLineWidth(3)
-    love.graphics.rectangle("line", overlayX, overlayY, card.width, overlayHeight, PERSON_HOVER_RADIUS,
-        PERSON_HOVER_RADIUS)
+    UiPanel.drawShadow(overlayX, overlayY, card.width, overlayHeight, {
+        alpha = 0.08,
+        offsetX = 2,
+        offsetY = 2,
+        destLeft = 8,
+        destRight = 8,
+        destTop = 8,
+        destBottom = 8,
+    })
+    UiPanel.drawPanel(overlayX, overlayY, card.width, overlayHeight, {
+        bodyColor = hoverColors.fill,
+        borderColor = hoverColors.border,
+    })
 
     love.graphics.setColor(hoverColors.text)
     love.graphics.printf(
@@ -1163,7 +1181,6 @@ local function drawPersonHoverOverlay(card)
         textScale
     )
 
-    love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -1181,12 +1198,19 @@ local function drawConsultingHoverOverlay(consultingRect)
     local overlayX = consultingRect.x
     local overlayY = math.max(8, consultingRect.y - CONSULTING_HOVER_HEIGHT - CONSULTING_HOVER_GAP)
 
-    love.graphics.setColor(hoverColors.fill)
-    love.graphics.rectangle("fill", overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT)
-
-    love.graphics.setColor(hoverColors.border)
-    love.graphics.setLineWidth(3)
-    love.graphics.rectangle("line", overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT)
+    UiPanel.drawShadow(overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT, {
+        alpha = 0.08,
+        offsetX = 2,
+        offsetY = 2,
+        destLeft = 8,
+        destRight = 8,
+        destTop = 8,
+        destBottom = 8,
+    })
+    UiPanel.drawPanel(overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT, {
+        bodyColor = hoverColors.fill,
+        borderColor = hoverColors.border,
+    })
 
     love.graphics.setFont(Theme.fonts.cardBody)
     love.graphics.setColor(hoverColors.text)
@@ -1198,7 +1222,6 @@ local function drawConsultingHoverOverlay(consultingRect)
         viewportScale
     )
 
-    love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -1224,32 +1247,17 @@ local function drawNewDayButton()
     end
 
     local buttonColors = Theme.colors.newDayButton
-    love.graphics.setFont(Theme.fonts.uiButton)
-
-    love.graphics.setColor(buttonColors.shadow)
-    love.graphics.rectangle("fill", button.x + 2, button.y + 2, button.width, button.height, 10, 10)
-
-    love.graphics.setColor(buttonColors.fill)
-    love.graphics.rectangle("fill", button.x, button.y, button.width, button.height, 10, 10)
-
-    love.graphics.setColor(buttonColors.border)
-    love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", button.x, button.y, button.width, button.height, 10, 10)
-    love.graphics.setColor(buttonColors.text)
-    love.graphics.printf(
-        "Start New Day",
-        button.x,
-        button.y + 10,
-        button.width * viewportScale,
-        "center",
-        0,
-        1 / viewportScale,
-        1 / viewportScale
-    )
+    UiButton.draw(button, "Start New Day", {
+        font = Theme.fonts.uiButton,
+        bodyColor = buttonColors.fill,
+        borderColor = buttonColors.border,
+        textColor = buttonColors.text,
+        isPressed = newDayButtonPressed,
+    })
 
     love.graphics.setFont(Theme.fonts.cardBody)
     local labelColor = buttonColors.label
-    love.graphics.setColor(labelColor[1], labelColor[2], labelColor[3], 0.75)
+    love.graphics.setColor(labelColor[1], labelColor[2], labelColor[3], (labelColor[4] or 1) * 0.75)
     love.graphics.printf(
         "Day " .. tostring(state.day or 1),
         button.x,
@@ -1261,7 +1269,6 @@ local function drawNewDayButton()
         1 / viewportScale
     )
 
-    love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -1307,37 +1314,33 @@ local function drawConsultingZone(gameX, gameY)
     local bodyColor = raised and zoneColors.bodyRaised or zoneColors.body
     local headerColor = raised and zoneColors.headerRaised or zoneColors.header
 
-    love.graphics.setColor(zoneColors.shadow)
-    love.graphics.rectangle("fill", zone.x + 2, zone.y + 2, zone.width, zone.height)
+    UiPanel.drawShadow(zone.x, zone.y, zone.width, zone.height, {
+        alpha = 0.14,
+        offsetX = 2,
+        offsetY = 2,
+    })
+    UiPanel.drawPanel(zone.x, zone.y, zone.width, zone.height, {
+        bodyColor = bodyColor,
+        headerColor = headerColor,
+        headerHeight = Card.HEADER_HEIGHT,
+        borderColor = zoneColors.border,
+    })
 
-    love.graphics.setColor(bodyColor)
-    love.graphics.rectangle("fill", zone.x, zone.y, zone.width, zone.height)
-
-    local borderInset = 2
-    local imageX = zone.x + borderInset
-    local imageY = zone.y + Card.HEADER_HEIGHT + borderInset
-    local imageWidth = zone.width - borderInset * 2
-    local imageHeight = zone.height - Card.HEADER_HEIGHT - borderInset * 2
-
-    if imageHeight > 0 then
-        love.graphics.setColor(bodyColor)
-        love.graphics.rectangle("fill", imageX, imageY, imageWidth, imageHeight)
-
-        local consultingImage = getConsultingZoneImage()
-        if consultingImage then
-            love.graphics.setColor(1, 1, 1, 1)
-            drawImageCover(consultingImage, imageX, imageY, imageWidth, imageHeight)
-        end
+    local iconAreaTop = zone.y + Card.HEADER_HEIGHT + 16
+    local iconAreaHeight = zone.height - Card.HEADER_HEIGHT - 22
+    local iconAreaWidth = zone.width - 28
+    local iconSize = math.max(28, math.min(iconAreaWidth, iconAreaHeight))
+    local consultingImage = getConsultingZoneImage()
+    if consultingImage then
+        local iconScale = math.min(iconSize / consultingImage:getWidth(), iconSize / consultingImage:getHeight())
+        local drawWidth = consultingImage:getWidth() * iconScale
+        local drawHeight = consultingImage:getHeight() * iconScale
+        local drawX = zone.x + (zone.width - drawWidth) * 0.5
+        local drawY = iconAreaTop + (iconAreaHeight - drawHeight) * 0.5
+        local iconColor = Theme.colors.icon
+        love.graphics.setColor(iconColor[1], iconColor[2], iconColor[3], 1)
+        love.graphics.draw(consultingImage, drawX, drawY, 0, iconScale, iconScale)
     end
-
-    love.graphics.setColor(headerColor)
-    love.graphics.rectangle("fill", zone.x, zone.y, zone.width, Card.HEADER_HEIGHT)
-
-    love.graphics.setColor(zoneColors.border)
-    love.graphics.setLineWidth(3)
-    love.graphics.rectangle("line", zone.x, zone.y, zone.width, zone.height)
-    love.graphics.setLineWidth(2)
-    love.graphics.line(zone.x, zone.y + Card.HEADER_HEIGHT, zone.x + zone.width, zone.y + Card.HEADER_HEIGHT)
 
     love.graphics.setFont(Theme.fonts.cardHeader)
     love.graphics.setColor(zoneColors.text)
@@ -1352,7 +1355,6 @@ local function drawConsultingZone(gameX, gameY)
         1 / viewportScale
     )
 
-    love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -1694,7 +1696,7 @@ function love.mousepressed(x, y, button)
     end
 
     if pointInRect(gameX, gameY, getNewDayButtonRect()) then
-        startNewDay()
+        newDayButtonPressed = true
         return
     end
 
@@ -1732,6 +1734,15 @@ end
 
 function love.mousereleased(x, y, button)
     if button ~= 1 then
+        return
+    end
+
+    if newDayButtonPressed then
+        newDayButtonPressed = false
+        local gameX, gameY = screenToGame(x, y)
+        if gameX and gameY and pointInRect(gameX, gameY, getNewDayButtonRect()) then
+            startNewDay()
+        end
         return
     end
 
