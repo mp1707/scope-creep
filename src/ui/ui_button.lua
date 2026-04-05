@@ -1,8 +1,20 @@
 local Scaling = require("src.core.scaling")
 local Theme = require("src.ui.theme")
 local UiPanel = require("src.ui.ui_panel")
+local UiShadow = require("src.ui.ui_shadow")
 
 local UiButton = {}
+
+local function darkenColor(color, amount)
+    local factor = 1 - math.max(0, math.min(1, amount or 0))
+    local alpha = color[4] or 1
+    return {
+        color[1] * factor,
+        color[2] * factor,
+        color[3] * factor,
+        alpha,
+    }
+end
 
 function UiButton.draw(rect, label, options)
     options = options or {}
@@ -14,22 +26,36 @@ function UiButton.draw(rect, label, options)
     local bodyColor = options.bodyColor or Theme.colors.newDayButton.fill
     local borderColor = options.borderColor or Theme.colors.newDayButton.border
     local textColor = options.textColor or Theme.colors.newDayButton.text
-    local shadowAlpha = tonumber(options.shadowAlpha) or 0.16
+    local isHovered = options.isHovered == true
     local isPressed = options.isPressed == true
+    local isInset = isHovered or isPressed
+    local hoverBodyColor = options.hoverBodyColor
+        or Theme.colors.newDayButton.fillHover
+        or darkenColor(bodyColor, 0.05)
+    local pressedBodyColor = options.pressedBodyColor
+        or Theme.colors.newDayButton.fillPressed
+        or darkenColor(hoverBodyColor, 0.05)
+    local drawBodyColor = bodyColor
+    if isPressed then
+        drawBodyColor = pressedBodyColor
+    elseif isHovered then
+        drawBodyColor = hoverBodyColor
+    end
+
     local pressOffsetY = tonumber(options.pressOffsetY) or 2
     local drawX = rect.x
-    local drawY = rect.y + (isPressed and pressOffsetY or 0)
+    local drawY = rect.y + (isInset and pressOffsetY or 0)
 
-    if not isPressed and shadowAlpha > 0 then
-        UiPanel.drawShadow(drawX, drawY, rect.width, rect.height, {
-            alpha = shadowAlpha,
-            offsetX = 2,
-            offsetY = 2,
-            expand = 0,
-        })
+    local shadowRole = isInset and "buttonInset" or "buttonRaised"
+    local shadowOptions = UiShadow.get(shadowRole, {
+        alpha = tonumber(options.shadowAlpha),
+    })
+    if (shadowOptions.alpha or 0) > 0 then
+        UiPanel.drawShadow(drawX, drawY, rect.width, rect.height, shadowOptions)
     end
+
     UiPanel.drawPanel(drawX, drawY, rect.width, rect.height, {
-        bodyColor = bodyColor,
+        bodyColor = drawBodyColor,
         borderColor = borderColor,
         alpha = tonumber(options.alpha) or 1,
     })

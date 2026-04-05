@@ -2,6 +2,7 @@ local Scaling = require("src.core.scaling")
 local Theme = require("src.ui.theme")
 local CardBackground = require("src.ui.card_background")
 local UiPanel = require("src.ui.ui_panel")
+local UiShadow = require("src.ui.ui_shadow")
 
 local BoosterPack = {}
 BoosterPack.__index = BoosterPack
@@ -106,16 +107,6 @@ function BoosterPack.new(config)
     self.scale = 1
     self.targetScale = 1
 
-    self.shadowOffsetX = 2
-    self.shadowOffsetY = 2
-    self.shadowAlpha = 0.08
-    self.shadowExpand = 0
-
-    self.targetShadowOffsetX = self.shadowOffsetX
-    self.targetShadowOffsetY = self.shadowOffsetY
-    self.targetShadowAlpha = self.shadowAlpha
-    self.targetShadowExpand = self.shadowExpand
-
     self.dragFollowSpeed = 34
     self.settleSpeed = 22
     self.scaleSpeed = 20
@@ -126,6 +117,7 @@ function BoosterPack.new(config)
     self.motionState = nil
     self.rotation = 0
     self.renderAlpha = 1
+    self:setShadowRole("cardRest", true)
 
     return self
 end
@@ -154,24 +146,22 @@ function BoosterPack:beginDrag(px, py, force)
     self.dragOffsetX = px - self.x
     self.dragOffsetY = py - self.y
     self.targetScale = 1.03
-    self.targetShadowOffsetX = 8
-    self.targetShadowOffsetY = 10
-    self.targetShadowAlpha = 0.17
-    self.targetShadowExpand = 8
+    self:setShadowRole("cardDrag")
     return true
 end
 
 function BoosterPack:endDrag()
     self.dragging = false
     self.targetScale = 1
-    self.targetShadowOffsetX = 2
-    self.targetShadowOffsetY = 2
-    self.targetShadowAlpha = 0.08
-    self.targetShadowExpand = 0
+    self:setShadowRole("cardRest")
 end
 
 function BoosterPack:isDragging()
     return self.dragging
+end
+
+function BoosterPack:setShadowRole(role, immediate)
+    UiShadow.applyRole(self, role, { immediate = immediate == true })
 end
 
 function BoosterPack:update(dt, pointerX, pointerY)
@@ -237,16 +227,13 @@ function BoosterPack:draw(_, options)
     local textColor = style and style.textColor or DEFAULT_TEXT_COLOR
 
     if not skipShadow then
-        UiPanel.drawShadow(self.x, self.y, self.width, self.height, {
-            alpha = (self.shadowAlpha or 0.08) * alpha,
-            offsetX = self.shadowOffsetX or 0,
-            offsetY = self.shadowOffsetY or 0,
-            expand = self.shadowExpand or 0,
-            destLeft = 10,
-            destRight = 10,
-            destTop = 10,
-            destBottom = 10,
-        })
+        UiPanel.drawShadow(
+            self.x,
+            self.y,
+            self.width,
+            self.height,
+            UiShadow.capture(self, "cardRest", { alphaMultiplier = alpha })
+        )
     end
 
     CardBackground.draw(self.x, self.y, self.width, self.height, alpha, {

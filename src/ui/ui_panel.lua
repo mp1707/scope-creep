@@ -1,5 +1,6 @@
 local Theme = require("src.ui.theme")
 local NineSlice = require("src.ui.nine_slice")
+local UiShadow = require("src.ui.ui_shadow")
 
 local UiPanel = {}
 
@@ -122,18 +123,17 @@ function UiPanel.drawPanel(x, y, width, height, options)
     local borderColor = options.borderColor or Theme.colors.borderStrong
 
     if options.drawShadow then
-        UiPanel.drawShadow(
-            x,
-            y,
-            width,
-            height,
-            {
-                alpha = tonumber(options.shadowAlpha) or 0.18,
-                offsetX = tonumber(options.shadowOffsetX) or 0,
-                offsetY = tonumber(options.shadowOffsetY) or 2,
-                expand = tonumber(options.shadowExpand) or 0,
-            }
-        )
+        local shadowOptions = UiShadow.get(options.shadowRole or "panel", {
+            alpha = tonumber(options.shadowAlpha),
+            offsetX = tonumber(options.shadowOffsetX),
+            offsetY = tonumber(options.shadowOffsetY),
+            expand = tonumber(options.shadowExpand),
+            destLeft = tonumber(options.shadowDestLeft),
+            destRight = tonumber(options.shadowDestRight),
+            destTop = tonumber(options.shadowDestTop),
+            destBottom = tonumber(options.shadowDestBottom),
+        })
+        UiPanel.drawShadow(x, y, width, height, shadowOptions)
     end
 
     UiPanel.drawSurface(x, y, width, height, bodyColor, { alpha = alpha })

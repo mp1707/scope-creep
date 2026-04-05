@@ -16,6 +16,16 @@ local function withAlpha(color, alpha)
     return { color[1], color[2], color[3], alpha }
 end
 
+local function darken(color, amount)
+    local factor = 1 - math.max(0, math.min(1, amount or 0))
+    return {
+        color[1] * factor,
+        color[2] * factor,
+        color[3] * factor,
+        color[4] or 1,
+    }
+end
+
 Theme.palette = {
     ink = hexColor("#1A2A3A"),
     white = hexColor("#FFFFFF"),
@@ -54,6 +64,8 @@ Theme.colors = {
     },
     newDayButton = {
         fill = Theme.palette.featureBody,
+        fillHover = darken(Theme.palette.featureBody, 0.05),
+        fillPressed = darken(Theme.palette.featureBody, 0.1),
         border = Theme.palette.ink,
         text = Theme.palette.ink,
         label = withAlpha(Theme.palette.ink, 0.6),

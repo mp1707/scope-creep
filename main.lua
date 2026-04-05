@@ -5,6 +5,7 @@ local Card = require("src.ui.card")
 local BoosterPack = require("src.ui.booster_pack")
 local UiPanel = require("src.ui.ui_panel")
 local UiButton = require("src.ui.ui_button")
+local UiShadow = require("src.ui.ui_shadow")
 
 local APP_WIDTH = 1920
 local APP_HEIGHT = 1080
@@ -91,6 +92,7 @@ local dragPressStartScreenX = nil
 local dragPressStartScreenY = nil
 local panningWorld = false
 local newDayButtonPressed = false
+local newDayButtonHovered = false
 
 local consumeMoneyAtConsulting
 local spawnMoneyForFeature
@@ -652,21 +654,7 @@ local function drawDragStackShadow()
         return
     end
 
-    local shadowExpand = shadowSource.shadowExpand or 0
-    local shadowOffsetX = shadowSource.shadowOffsetX or 0
-    local shadowOffsetY = shadowSource.shadowOffsetY or 0
-    local shadowAlpha = shadowSource.shadowAlpha or 0.11
-
-    UiPanel.drawShadow(minX, minY, (maxX - minX), (maxY - minY), {
-        alpha = shadowAlpha,
-        offsetX = shadowOffsetX,
-        offsetY = shadowOffsetY,
-        expand = shadowExpand,
-        destLeft = 10,
-        destRight = 10,
-        destTop = 10,
-        destBottom = 10,
-    })
+    UiPanel.drawShadow(minX, minY, (maxX - minX), (maxY - minY), UiShadow.capture(shadowSource, "cardDrag"))
 end
 
 local function drawOfficeBackground()
@@ -936,10 +924,7 @@ local function updatePhysicalCardMotions(dt)
         if motion then
             card.dragging = false
             card.targetScale = 1
-            card.targetShadowOffsetX = 4
-            card.targetShadowOffsetY = 4
-            card.targetShadowAlpha = 0.11
-            card.targetShadowExpand = 0
+            UiShadow.applyRole(card, "cardMotion")
 
             if motion.kind ~= "sideBounce" then
                 motion.kind = "sideBounce"
@@ -996,6 +981,7 @@ local function updatePhysicalCardMotions(dt)
                 card.y = motion.endY
                 motion.restElapsed = (motion.restElapsed or 0) + dt
                 if motion.restElapsed >= (motion.restHold or 0.06) then
+                    UiShadow.applyRole(card, "cardRest")
                     card.motionState = nil
                     card.rotation = 0
                     card.renderAlpha = 1
@@ -1155,15 +1141,7 @@ local function drawPersonHoverOverlay(card)
     local overlayY = math.max(8, card.y - overlayHeight - PERSON_HOVER_GAP)
     local textY = overlayY + math.max(PERSON_HOVER_PADDING_Y, (overlayHeight - textHeight) * 0.5)
 
-    UiPanel.drawShadow(overlayX, overlayY, card.width, overlayHeight, {
-        alpha = 0.08,
-        offsetX = 2,
-        offsetY = 2,
-        destLeft = 8,
-        destRight = 8,
-        destTop = 8,
-        destBottom = 8,
-    })
+    UiPanel.drawShadow(overlayX, overlayY, card.width, overlayHeight, UiShadow.get("tooltip"))
     UiPanel.drawPanel(overlayX, overlayY, card.width, overlayHeight, {
         bodyColor = hoverColors.fill,
         borderColor = hoverColors.border,
@@ -1198,15 +1176,7 @@ local function drawConsultingHoverOverlay(consultingRect)
     local overlayX = consultingRect.x
     local overlayY = math.max(8, consultingRect.y - CONSULTING_HOVER_HEIGHT - CONSULTING_HOVER_GAP)
 
-    UiPanel.drawShadow(overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT, {
-        alpha = 0.08,
-        offsetX = 2,
-        offsetY = 2,
-        destLeft = 8,
-        destRight = 8,
-        destTop = 8,
-        destBottom = 8,
-    })
+    UiPanel.drawShadow(overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT, UiShadow.get("tooltip"))
     UiPanel.drawPanel(overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT, {
         bodyColor = hoverColors.fill,
         borderColor = hoverColors.border,
@@ -1250,8 +1220,11 @@ local function drawNewDayButton()
     UiButton.draw(button, "Start New Day", {
         font = Theme.fonts.uiButton,
         bodyColor = buttonColors.fill,
+        hoverBodyColor = buttonColors.fillHover,
+        pressedBodyColor = buttonColors.fillPressed,
         borderColor = buttonColors.border,
         textColor = buttonColors.text,
+        isHovered = newDayButtonHovered,
         isPressed = newDayButtonPressed,
     })
 
@@ -1314,11 +1287,7 @@ local function drawConsultingZone(gameX, gameY)
     local bodyColor = raised and zoneColors.bodyRaised or zoneColors.body
     local headerColor = raised and zoneColors.headerRaised or zoneColors.header
 
-    UiPanel.drawShadow(zone.x, zone.y, zone.width, zone.height, {
-        alpha = 0.14,
-        offsetX = 2,
-        offsetY = 2,
-    })
+    UiPanel.drawShadow(zone.x, zone.y, zone.width, zone.height, UiShadow.get("panel"))
     UiPanel.drawPanel(zone.x, zone.y, zone.width, zone.height, {
         bodyColor = bodyColor,
         headerColor = headerColor,
@@ -1517,6 +1486,8 @@ local function configureHotReload()
         dragPressStartScreenX = nil
         dragPressStartScreenY = nil
         panningWorld = false
+        newDayButtonPressed = false
+        newDayButtonHovered = false
     end
 
     HotReload.onReload = function()
@@ -1575,6 +1546,8 @@ function love.load(isReload)
     dragPressStartScreenY = nil
     panningWorld = false
     consultingHover = 0
+    newDayButtonPressed = false
+    newDayButtonHovered = false
 
     configureHotReload()
 end
@@ -1588,6 +1561,8 @@ function love.update(dt)
 
     local consultingRect = getConsultingRect()
     local consultingHovered = gameX and gameY and pointInRect(gameX, gameY, consultingRect) or false
+    local newDayButtonRect = getNewDayButtonRect()
+    newDayButtonHovered = gameX and gameY and pointInRect(gameX, gameY, newDayButtonRect) or false
     local consultingRaised = consultingHovered or isConsultingDropActive()
     consultingHover = damp(consultingHover, consultingRaised and 1 or 0, 18, dt)
 
