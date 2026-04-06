@@ -10,8 +10,14 @@ function CardBackground.draw(x, y, width, height, alpha, options)
     local headerColor = options.headerColor
     local headerHeight = tonumber(options.headerHeight) or 0
     local borderColor = options.borderColor or Theme.colors.borderStrong
+    local bodySurfaceFormFactor = options.surfaceFormFactor
+    local headerSurfaceFormFactor = options.headerSurfaceFormFactor
+        or Theme.card.headerSurfaceFormFactor
 
-    UiPanel.drawSurface(x, y, width, height, bodyColor, { alpha = alpha })
+    UiPanel.drawSurface(x, y, width, height, bodyColor, {
+        alpha = alpha,
+        formFactor = bodySurfaceFormFactor,
+    })
 
     if headerColor and headerHeight > 0 then
         UiPanel.drawTopSurfaceOverlay(
@@ -24,6 +30,7 @@ function CardBackground.draw(x, y, width, height, alpha, options)
             {
                 alpha = alpha,
                 bleedBottom = tonumber(options.headerBleedBottom) or 4,
+                formFactor = headerSurfaceFormFactor,
             }
         )
     end

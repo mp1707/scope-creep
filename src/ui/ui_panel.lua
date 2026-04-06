@@ -4,6 +4,18 @@ local UiShadow = require("src.ui.ui_shadow")
 
 local UiPanel = {}
 
+local function resolveSurfaceConfig(options)
+    local formFactor = options and options.formFactor
+    local formFactors = Theme.ui.surface9sliceFormFactors
+    if type(formFactor) == "string" and type(formFactors) == "table" then
+        local variant = formFactors[formFactor]
+        if variant then
+            return variant
+        end
+    end
+    return Theme.ui.surface9slice
+end
+
 local function pickInsets(options, defaultConfig)
     local sourceLeft = tonumber(options.sourceLeft) or tonumber(defaultConfig.sourceLeft) or 48
     local sourceRight = tonumber(options.sourceRight) or tonumber(defaultConfig.sourceRight) or 48
@@ -62,7 +74,7 @@ local function drawNineSlice(config, x, y, width, height, color, options)
 end
 
 function UiPanel.drawSurface(x, y, width, height, color, options)
-    local config = Theme.ui.surface9slice
+    local config = resolveSurfaceConfig(options)
     return drawNineSlice(config, x, y, width, height, color, options)
 end
 
@@ -109,6 +121,7 @@ function UiPanel.drawShadow(x, y, width, height, options)
         destRight = insets.destRight,
         destTop = insets.destTop,
         destBottom = insets.destBottom,
+        formFactor = options.formFactor,
     })
     love.graphics.setColor(1, 1, 1, 1)
 end
@@ -121,6 +134,8 @@ function UiPanel.drawPanel(x, y, width, height, options)
     local headerColor = options.headerColor
     local headerHeight = tonumber(options.headerHeight) or 0
     local borderColor = options.borderColor or Theme.colors.borderStrong
+    local surfaceFormFactor = options.surfaceFormFactor
+    local headerSurfaceFormFactor = options.headerSurfaceFormFactor or surfaceFormFactor
 
     if options.drawShadow then
         local shadowOptions = UiShadow.get(options.shadowRole or "panel", {
@@ -133,12 +148,19 @@ function UiPanel.drawPanel(x, y, width, height, options)
             destTop = tonumber(options.shadowDestTop),
             destBottom = tonumber(options.shadowDestBottom),
         })
+        shadowOptions.formFactor = surfaceFormFactor
         UiPanel.drawShadow(x, y, width, height, shadowOptions)
     end
 
-    UiPanel.drawSurface(x, y, width, height, bodyColor, { alpha = alpha })
+    UiPanel.drawSurface(x, y, width, height, bodyColor, {
+        alpha = alpha,
+        formFactor = surfaceFormFactor,
+    })
     if headerColor and headerHeight > 0 then
-        UiPanel.drawTopSurfaceOverlay(x, y, width, height, headerHeight, headerColor, { alpha = alpha })
+        UiPanel.drawTopSurfaceOverlay(x, y, width, height, headerHeight, headerColor, {
+            alpha = alpha,
+            formFactor = headerSurfaceFormFactor,
+        })
     end
     UiPanel.drawBorder(x, y, width, height, borderColor, { alpha = alpha })
 end
