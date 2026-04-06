@@ -44,6 +44,10 @@ local MONEY_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/moneySmall.png"
 local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/circleBig.png"
 
 local WORK_BAR_HEIGHT    = 28
+local WORK_BAR_FILL_MARGIN_X = 6
+local WORK_BAR_FILL_MARGIN_Y = 7
+local WORK_BAR_FILL_RADIUS = 8
+local WORK_BAR_FILL_RIGHT_TRIM = 4
 local CARD_ADDON_GAP     = 3   -- gap: card→bar, bar→tooltip
 local TOOLTIP_MIN_HEIGHT = 36
 local TOOLTIP_PADDING_X  = 14
@@ -270,7 +274,6 @@ removeCardInstance = function(cardToRemove)
             other.recipePartnerId = nil
             other.recipeActive = false
             other.recipeElapsed = 0
-            other.workProgress = 0
         end
     end
 end
@@ -424,7 +427,6 @@ local function createCard(config)
         hasDeadline = config.hasDeadline,
         ownerWorkerId = config.ownerWorkerId,
         stackParentId = config.stackParentId,
-        workProgress = config.workProgress,
         width = config.width or CARD_WIDTH,
         height = config.height or CARD_HEIGHT,
         style = config.style,
@@ -771,7 +773,6 @@ local function updateRecipes(dt)
     for _, childCard in ipairs(cards) do
         if childCard.recipeActive then
             childCard.recipeElapsed = (childCard.recipeElapsed or 0) + dt
-            childCard.workProgress = childCard.recipeElapsed -- alias for drawWorkBars
 
             if childCard.recipeElapsed >= (childCard.recipeDuration or 0) then
                 local parentCard = getCardById(childCard.recipePartnerId)
@@ -960,6 +961,17 @@ local function updateAttachedCardTargets()
     end
 end
 
+local function computeCapsuleFillRight(fillX, fillWidth, radius, progress)
+    local p = clamp(progress or 0, 0, 1)
+    if p <= 0 then return fillX end
+    if p >= 1 then
+        return fillX + fillWidth
+    end
+
+    local cap = math.min(math.max(0, radius), fillWidth * 0.5)
+    return fillX + cap + (fillWidth - cap) * p
+end
+
 local function drawWorkBars()
     local workBarColors = Theme.colors.workBar
     for _, childCard in ipairs(cards) do
@@ -972,25 +984,36 @@ local function drawWorkBars()
                 local barX = parentCard.x
                 local stackTopY = math.min(parentCard.y, childCard.y)
                 local barY = stackTopY - CARD_ADDON_GAP - WORK_BAR_HEIGHT
-                -- 1. Track background (full bar)
                 UiPanel.drawSurface(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, workBarColors.track)
 
-                -- 2. Fill: draw the full-width surface in fill color, scissor-clipped to progressWidth.
-                --    Drawing at full width keeps the left pill corners perfectly shaped; the scissor
-                --    cuts the right edge cleanly without distorting the 9-slice corner scaling.
-                if progress > 0 then
-                    local sx1, sy1 = love.graphics.transformPoint(barX, barY)
-                    local sx2, sy2 = love.graphics.transformPoint(barX + CARD_WIDTH * progress, barY + WORK_BAR_HEIGHT)
-                    love.graphics.setScissor(
-                        math.floor(sx1), math.floor(sy1),
-                        math.ceil(sx2) - math.floor(sx1),
-                        math.ceil(sy2) - math.floor(sy1)
-                    )
-                    UiPanel.drawSurface(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, workBarColors.border)
-                    love.graphics.setScissor()
+                -- Simple fill: plain rounded rect inside the static border.
+                local fillX = barX + WORK_BAR_FILL_MARGIN_X
+                local fillY = barY + WORK_BAR_FILL_MARGIN_Y
+                local fillMaxWidth = math.max(0,
+                    CARD_WIDTH - WORK_BAR_FILL_MARGIN_X * 2 - WORK_BAR_FILL_RIGHT_TRIM)
+                local fillHeight = math.max(0, WORK_BAR_HEIGHT - WORK_BAR_FILL_MARGIN_Y * 2)
+                if fillMaxWidth > 0 and fillHeight > 0 then
+                    local radius = math.min(WORK_BAR_FILL_RADIUS, fillHeight * 0.5)
+                    local fillColor = workBarColors.fill or workBarColors.border
+                    local fillRight = computeCapsuleFillRight(fillX, fillMaxWidth, radius, progress)
+                    local visibleWidth = fillRight - fillX
+                    if visibleWidth > 0 then
+                        local cap = math.min(radius, visibleWidth * 0.5)
+                        local centerY = fillY + fillHeight * 0.5
+                        local leftCenterX = fillX + cap
+                        local rightCenterX = fillRight - cap
+                        local bodyX = leftCenterX
+                        local bodyWidth = rightCenterX - leftCenterX
+
+                        love.graphics.setColor(fillColor)
+                        love.graphics.circle("fill", leftCenterX, centerY, cap, 20)
+                        if bodyWidth > 0 then
+                            love.graphics.rectangle("fill", bodyX, fillY, bodyWidth, fillHeight)
+                        end
+                        love.graphics.circle("fill", rightCenterX, centerY, cap, 20)
+                    end
                 end
 
-                -- 3. Border on top (same scaling as card)
                 UiPanel.drawBorder(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, workBarColors.border)
             end
         end

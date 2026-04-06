@@ -323,7 +323,6 @@ function Card.new(config)
     self.ownerWorkerId = config.ownerWorkerId
 
     self.stackParentId = config.stackParentId
-    self.workProgress = config.workProgress or 0
 
     self.width = config.width or 160
     local defaultBodyHeight = math.floor((self.width * CARD_BODY_ASPECT_HEIGHT / CARD_BODY_ASPECT_WIDTH) + 0.5)
@@ -476,7 +475,6 @@ function Card:getSnapshot()
         hasDeadline = self.hasDeadline,
         ownerWorkerId = self.ownerWorkerId,
         stackParentId = self.stackParentId,
-        workProgress = self.workProgress,
         x = self.x,
         y = self.y,
         targetX = self.targetX,

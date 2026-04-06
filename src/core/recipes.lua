@@ -330,7 +330,6 @@ function Recipes.startRecipe(parentCard, childCard, recipe, allCards)
     childCard.recipeElapsed = 0
     childCard.recipeDuration = duration
     childCard.recipePartnerId = parentCard.id
-    childCard.workProgress = 0
 
     -- Mark partner on parent too (so we can cancel from either end)
     parentCard.recipePartnerId = childCard.id
@@ -347,7 +346,6 @@ function Recipes.cancelRecipe(card, allCards)
     card.recipeElapsed = 0
     card.recipeDuration = nil
     card.recipePartnerId = nil
-    card.workProgress = 0
 
     if partnerId and allCards then
         for _, other in ipairs(allCards) do
@@ -356,7 +354,6 @@ function Recipes.cancelRecipe(card, allCards)
                 other.recipeElapsed = 0
                 other.recipeDuration = nil
                 other.recipePartnerId = nil
-                other.workProgress = 0
                 break
             end
         end

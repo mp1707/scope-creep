@@ -225,7 +225,6 @@ function Sprint.executePhase(phaseName, callbacks)
             card.recipeActive = false
             card.recipePartnerId = nil
             card.recipeElapsed = 0
-            card.workProgress = 0
             state.stats.bugsSpawned = state.stats.bugsSpawned + 1
         end
 

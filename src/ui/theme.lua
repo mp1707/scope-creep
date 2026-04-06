@@ -94,7 +94,7 @@ Theme.colors = {
     workBar = {
         track = Theme.palette.mutedPaper,
         border = Theme.palette.ink,
-        fill = Theme.palette.blue,
+        fill = Theme.palette.ink,
     },
     reloadToast = {
         text = Theme.palette.ink,
