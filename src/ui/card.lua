@@ -6,7 +6,7 @@ local UiShadow = require("src.ui.ui_shadow")
 
 local Card = {}
 Card.__index = Card
-Card.HEADER_HEIGHT = 40
+Card.HEADER_HEIGHT = 48
 
 local CARD_PADDING = 11
 local FOOTER_HEIGHT = 26
@@ -21,7 +21,7 @@ local MONEY_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/moneySmall.png"
 local FEATURE_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
 local DOT_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/dotSmall.png"
 local DEFAULT_ICON_PATH = FEATURE_ICON_PATH
-local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/scribbleCricle.png"
+local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/circleBig.png"
 
 local cardIconImageCache = {}
 local cardIconLoadAttempted = {}
@@ -288,6 +288,8 @@ function Card.new(config)
 
     self.id = config.id
     self.cardType = config.cardType or "default"
+    self.role = config.role
+    self.subType = config.subType
     self.title = config.title or config.name or "Card"
     self.effect = config.effect
     self.iconPath = config.iconPath
@@ -303,6 +305,22 @@ function Card.new(config)
     if self.cardType == "opportunity" and self.insightsRemaining == nil then
         self.insightsRemaining = 3
     end
+
+    -- Focus system (worker cards)
+    self.maxFocus = config.maxFocus
+    self.focus = config.focus
+
+    -- Recipe tracking
+    self.recipeActive = config.recipeActive or false
+    self.recipeElapsed = config.recipeElapsed or 0
+    self.recipeDuration = config.recipeDuration
+    self.recipePartnerId = config.recipePartnerId
+
+    -- Deadline badge
+    self.hasDeadline = config.hasDeadline or false
+
+    -- Burnout link
+    self.ownerWorkerId = config.ownerWorkerId
 
     self.stackParentId = config.stackParentId
     self.workProgress = config.workProgress or 0
@@ -434,6 +452,8 @@ function Card:getSnapshot()
     return {
         id = self.id,
         cardType = self.cardType,
+        role = self.role,
+        subType = self.subType,
         title = self.title,
         effect = self.effect,
         iconPath = self.iconPath,
@@ -444,6 +464,17 @@ function Card:getSnapshot()
         value = self.value,
         moneyAmount = self.moneyAmount,
         insightsRemaining = self.insightsRemaining,
+        -- Focus
+        maxFocus = self.maxFocus,
+        focus = self.focus,
+        -- Recipe
+        recipeActive = self.recipeActive,
+        recipeElapsed = self.recipeElapsed,
+        recipeDuration = self.recipeDuration,
+        recipePartnerId = self.recipePartnerId,
+        -- Misc
+        hasDeadline = self.hasDeadline,
+        ownerWorkerId = self.ownerWorkerId,
         stackParentId = self.stackParentId,
         workProgress = self.workProgress,
         x = self.x,
@@ -468,7 +499,8 @@ function Card:drawBodyContent(alpha)
     if cardType == "feature" and (self.costTotal or 0) > 0 and not self:isFeatureComplete() then
         iconAreaY = iconAreaY + FEATURE_PIP_SIZE + FEATURE_PIP_GAP + 4
         iconAreaHeight = math.max(1, footerTop - iconAreaY - CARD_PADDING)
-    elseif (cardType == "person" or cardType == "developer") and (tonumber(self.maxCapacity) or 0) > 0 then
+    elseif (cardType == "person" or cardType == "developer")
+        and ((tonumber(self.maxFocus) or 0) > 0 or (tonumber(self.maxCapacity) or 0) > 0) then
         iconAreaY = iconAreaY + FEATURE_PIP_SIZE + FEATURE_PIP_GAP + 4
         iconAreaHeight = math.max(1, footerTop - iconAreaY - CARD_PADDING)
     end
@@ -531,6 +563,29 @@ function Card:drawBodyContent(alpha)
 
     local icon = getCardHeroImage(self)
     if not icon then
+        -- Letter fallback: draw first letter of title centered in icon area
+        local headerColor = self:getStyleColor("headerColor")
+        local circleImage = getCardIconImage(CIRCLE_BG_ICON_PATH)
+        local fallbackSize = math.min(getBodyIconTargetSize(cardType, self.height), iconAreaWidth, iconAreaHeight)
+        if circleImage then
+            local circleTint = { headerColor[1], headerColor[2], headerColor[3], 1 }
+            drawIconInArea(circleImage, iconAreaX, iconAreaY, iconAreaWidth, iconAreaHeight,
+                fallbackSize * 0.9, { verticalBias = -0.06, alpha = alpha, tint = circleTint })
+        end
+        local viewportScale = Scaling.getScale()
+        if viewportScale <= 0 then viewportScale = 1 end
+        local firstLetter = (self.title or "?"):sub(1, 1):upper()
+        local letterFont = Theme.fonts.cardHeader or love.graphics.getFont()
+        local prevFont = love.graphics.getFont()
+        love.graphics.setFont(letterFont)
+        local letterScale = (fallbackSize * 0.55) / math.max(1, letterFont:getHeight() / viewportScale)
+        local letterW = letterFont:getWidth(firstLetter) * (letterScale / viewportScale)
+        local letterH = letterFont:getHeight() * (letterScale / viewportScale)
+        local lx = iconAreaX + (iconAreaWidth - letterW) * 0.5
+        local ly = iconAreaY + (iconAreaHeight - letterH) * 0.5 - iconAreaHeight * 0.06
+        love.graphics.setColor(applyAlpha(self:getStyleColor("textColor"), alpha))
+        love.graphics.print(firstLetter, lx, ly, 0, letterScale / viewportScale, letterScale / viewportScale)
+        love.graphics.setFont(prevFont)
         return
     end
 
@@ -623,8 +678,14 @@ function Card:drawIndicators(alpha)
         total = tonumber(self.costTotal) or 0
         filled = math.max(0, math.floor(tonumber(self.costRemaining) or 0))
     elseif self.cardType == "person" or self.cardType == "developer" then
-        total = tonumber(self.maxCapacity) or 0
-        filled = math.max(0, math.floor(tonumber(self.capacity) or 0))
+        -- Use focus pips if available, fall back to capacity
+        if self.maxFocus ~= nil then
+            total = tonumber(self.maxFocus) or 0
+            filled = math.max(0, math.floor(tonumber(self.focus) or 0))
+        else
+            total = tonumber(self.maxCapacity) or 0
+            filled = math.max(0, math.floor(tonumber(self.capacity) or 0))
+        end
     else
         return
     end
@@ -680,94 +741,75 @@ function Card:drawFooterInfo(viewportScale, bodyFont, valueFont, alpha)
     local fontScale = (1 / viewportScale) * 0.85
     local lineHeight = font:getHeight() * fontScale
     local footerY = self.y + self.height - CARD_PADDING - lineHeight
-    local leftX = self.x + CARD_PADDING
     local rightZoneWidth = math.floor(self.width * 0.44)
     local rightX = self.x + self.width - CARD_PADDING - rightZoneWidth
-    local leftZoneWidth = math.max(1, rightX - leftX - 4)
 
-    local function printLeftLine(text)
-        if text == nil or text == "" then
-            return
-        end
-        local clipped = fitTextToWidth(text, leftZoneWidth, font, fontScale)
-        love.graphics.printf(clipped, leftX, footerY, leftZoneWidth * viewportScale, "left", 0, fontScale, fontScale)
-    end
-
-    local function printRightLine(text)
-        if text == nil or text == "" then
-            return
-        end
-        local clipped = fitTextToWidth(text, rightZoneWidth, font, fontScale)
-        love.graphics.printf(clipped, rightX, footerY, rightZoneWidth * viewportScale, "right", 0, fontScale, fontScale)
-    end
-
+    -- Effect text is shown only in hover tooltips (not on the card itself).
+    -- Footer only shows numeric values where relevant.
     love.graphics.setColor(applyAlpha(textColor, alpha))
 
+    -- Money and resource cards: show amount
+    if self.cardType == "money" or self.cardType == "resource" then
+        drawMoneyAmountWithIcon(
+            self.moneyAmount or self.value or 1,
+            rightX, footerY, rightZoneWidth,
+            { align = "right", fontScale = fontScale, iconHeightFactor = 0.9, iconVerticalAlign = "bottom" }
+        )
+        return
+    end
+
+    -- Shipped work: show payout amount
+    if self.cardType == "shipped" then
+        drawMoneyAmountWithIcon(
+            self.moneyAmount or 2,
+            rightX, footerY, rightZoneWidth,
+            { align = "right", fontScale = fontScale, iconHeightFactor = 0.9, iconVerticalAlign = "bottom" }
+        )
+        return
+    end
+
+    -- Legacy feature cards: show value
     if self.cardType == "feature" then
         drawMoneyAmountWithIcon(
             self.value or 0,
-            rightX,
-            footerY,
-            rightZoneWidth,
-            {
-                align = "right",
-                fontScale = fontScale,
-                iconHeightFactor = 0.9,
-                iconVerticalAlign = "bottom",
-            }
+            rightX, footerY, rightZoneWidth,
+            { align = "right", fontScale = fontScale, iconHeightFactor = 0.9, iconVerticalAlign = "bottom" }
         )
         return
     end
 
-    if self.cardType == "money" or self.cardType == "resource" then
-        printLeftLine(self.effect)
-        drawMoneyAmountWithIcon(
-            self.moneyAmount or self.value or 1,
-            rightX,
-            footerY,
-            rightZoneWidth,
-            {
-                align = "right",
-                fontScale = fontScale,
-                iconHeightFactor = 0.9,
-                iconVerticalAlign = "bottom",
-            }
-        )
+    -- All other card types: nothing in the footer (effect shown in tooltip)
+end
+
+function Card:drawDeadlineBadge(alpha, viewportScale)
+    if not self.hasDeadline then
         return
     end
 
-    if self.cardType == "person" or self.cardType == "developer" then
-        return
-    end
+    local badgeH = 14
+    local badgeX = self.x + 2
+    local badgeY = self.y + Card.HEADER_HEIGHT + 2
+    local badgeW = self.width - 4
+    local orange = Theme.palette.deadlineOrange or { 0.91, 0.48, 0.19, 1 }
 
-    if self.cardType == "opportunity" then
-        return
-    end
+    love.graphics.setColor(orange[1], orange[2], orange[3], (orange[4] or 1) * alpha)
+    love.graphics.rectangle("fill", badgeX, badgeY, badgeW, badgeH, 2, 2)
 
-    if self.cardType == "event" or self.cardType == "management"
-        or self.cardType == "problem" or self.cardType == "bug" then
-        printLeftLine(self.effect or "Kurzinfo")
-        if self.insightsRemaining ~= nil then
-            printRightLine(string.format("x%d", math.max(0, math.floor(self.insightsRemaining))))
-        end
-        return
-    end
-
-    printLeftLine(self.effect)
-    if self.value ~= nil then
-        drawMoneyAmountWithIcon(
-            self.value or 0,
-            rightX,
-            footerY,
-            rightZoneWidth,
-            {
-                align = "right",
-                fontScale = fontScale,
-                iconHeightFactor = 0.9,
-                iconVerticalAlign = "bottom",
-            }
-        )
-    end
+    local font = Theme.fonts.cardBody or love.graphics.getFont()
+    local prevFont = love.graphics.getFont()
+    love.graphics.setFont(font)
+    local scale = (1 / (viewportScale or 1)) * 0.72
+    local label = "DEADLINE"
+    local labelW = font:getWidth(label) * scale
+    local labelH = font:getHeight() * scale
+    love.graphics.setColor(1, 1, 1, alpha)
+    love.graphics.print(
+        label,
+        badgeX + (badgeW - labelW) * 0.5,
+        badgeY + (badgeH - labelH) * 0.5,
+        0, scale, scale
+    )
+    love.graphics.setFont(prevFont)
 end
 
 function Card:draw(headerFont, options)
@@ -823,17 +865,19 @@ function Card:draw(headerFont, options)
     if not isOpportunity then
         local headerFontRef = love.graphics.getFont()
         local headerScale = 1 / viewportScale
-        local titleY = self.y + (headerHeight - (headerFontRef:getHeight() * headerScale)) * 0.5
-        local titleMaxWidth = self.width - CARD_PADDING * 2
+        local headerPaddingX = CARD_PADDING + 5
+        local titleY = self.y + (headerHeight - (headerFontRef:getHeight() * headerScale)) * 0.2 + (10 * headerScale)
+        local titleMaxWidth = self.width - headerPaddingX * 2
         local titleText = fitTextToWidth(self.title, titleMaxWidth, headerFontRef, headerScale)
 
         love.graphics.setColor(applyAlpha(textColor, alpha))
-        love.graphics.print(titleText, self.x + CARD_PADDING, titleY, 0, headerScale, headerScale)
+        love.graphics.print(titleText, self.x + headerPaddingX, titleY, 0, headerScale, headerScale)
     end
 
     self:drawIndicators(alpha)
     self:drawBodyContent(alpha)
     drawOpportunityBadge(self, alpha)
+    self:drawDeadlineBadge(alpha, viewportScale)
     self:drawFooterInfo(viewportScale, bodyFont, valueFont, alpha)
 
     love.graphics.pop()

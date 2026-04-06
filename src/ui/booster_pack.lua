@@ -10,7 +10,7 @@ BoosterPack.__index = BoosterPack
 local BADGE_SIZE = 34
 local BADGE_INSET = 6
 local FEATURE_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
-local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/scribbleCricle.png"
+local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/circleBig.png"
 local DEFAULT_TEXT_COLOR = Theme.colors.textPrimary
 
 local featureIconImage = nil

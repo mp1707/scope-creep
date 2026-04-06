@@ -2,69 +2,69 @@ local HotReload = require("src.core.hot_reload")
 local Scaling = require("src.core.scaling")
 local Theme = require("src.ui.theme")
 local Card = require("src.ui.card")
-local BoosterPack = require("src.ui.booster_pack")
 local UiPanel = require("src.ui.ui_panel")
-local UiButton = require("src.ui.ui_button")
 local UiShadow = require("src.ui.ui_shadow")
+local CardDefs = require("src.core.card_defs")
+local Recipes = require("src.core.recipes")
+local Sprint = require("src.core.sprint")
+local Hud = require("src.ui.hud")
 
 local APP_WIDTH = 1920
 local APP_HEIGHT = 1080
 local WORLD_WIDTH = APP_WIDTH * 2
 local WORLD_HEIGHT = APP_HEIGHT * 2
 
-local state = {
-    time = 0,
-    day = 1,
-    nextCardId = 1,
-    cards = nil,
-    camera = nil,
-}
-
 local CARD_BODY_ASPECT_WIDTH = 300
 local CARD_BODY_ASPECT_HEIGHT = 350
 local CARD_WIDTH = 150
 local CARD_BODY_HEIGHT = math.floor((CARD_WIDTH * CARD_BODY_ASPECT_HEIGHT / CARD_BODY_ASPECT_WIDTH) + 0.5)
 local CARD_HEIGHT = (Card.HEADER_HEIGHT or 34) + CARD_BODY_HEIGHT
-local BOOSTER_PACK_IMAGE_ASPECT = 400 / 500
-local BOOSTER_PACK_HEIGHT = math.floor(CARD_HEIGHT * 1.089 + 0.5)
-local BOOSTER_PACK_WIDTH = math.floor(BOOSTER_PACK_HEIGHT * BOOSTER_PACK_IMAGE_ASPECT + 0.5)
 
 local STACK_OFFSET_Y = (Card.HEADER_HEIGHT or 34) - 7
 local STACK_SNAP_DISTANCE = 80
 local CLICK_ATTACH_THRESHOLD = 6
-local OFFICE_BACKGROUND_PATH = "assets/handdrawn/officebg.png"
-local STEVE_ICON_PATH = "assets/handdrawn/characters/steve.png"
-local CONSULTING_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
-local MONEY_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/moneySmall.png"
-local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/scribbleCricle.png"
 
-local WORK_CYCLE_SECONDS = 3
+-- Grid layout for starting cards
+local GRID_ORIGIN_X = WORLD_WIDTH * 0.28
+local GRID_ORIGIN_Y = WORLD_HEIGHT * 0.34
+local GRID_COL_SPACING = CARD_WIDTH + 70
+local GRID_ROW_SPACING = CARD_HEIGHT + 28
+
+-- Coffee Machine passive
+local COFFEE_MACHINE_INTERVAL = 20
+local COFFEE_MAX_ON_BOARD = 2
+
+-- Hire Market / Business Opportunity
+local HIRE_MARKET_COST = 3
+local BUSINESS_OPP_COST = 2
+
+-- Asset paths
+local OFFICE_BACKGROUND_PATH = "assets/handdrawn/officebg.png"
+local MONEY_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/moneySmall.png"
+local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/circleBig.png"
+
 local WORK_BAR_HEIGHT = 28
-local OPPORTUNITY_CLICK_LIMIT = 3
-local OPPORTUNITY_WOBBLE_DURATION = 0.18
-local OPPORTUNITY_WOBBLE_AMPLITUDE = 0.05
-local OPPORTUNITY_WOBBLE_CYCLES = 2.4
 local PERSON_HOVER_MIN_HEIGHT = 32
 local PERSON_HOVER_GAP = 14
 local PERSON_HOVER_PADDING_X = 10
 local PERSON_HOVER_PADDING_Y = 8
-local CONSULTING_HOVER_HEIGHT = 58
-local CONSULTING_HOVER_GAP = 14
 
-local NEW_DAY_BUTTON = {
-    width = 220,
-    height = 52,
-    marginRight = 26,
-    marginBottom = 20,
+-- ── Module-level state ────────────────────────────────────────────────────────
+
+local state = {
+    time = 0,
+    nextCardId = 1,
+    cards = nil,
+    camera = nil,
+    sprint = nil,
+    gameState = nil,
 }
 
-local CONSULTING_ZONE = {
-    width = 147,
-    height = 157,
-    marginLeft = 34,
-    visibleHeight = 142,
-    hoverLift = 11,
-    cost = 1,
+local gameState = {
+    money = 3, -- starts with 3 money cards
+    bugCount = 0,
+    burnoutCount = 0,
+    hireCount = 0, -- number of hires from Hire Market so far
 }
 
 local camera = {
@@ -76,15 +76,6 @@ local camera = {
     zoomStep = 1.12,
 }
 
-local consultingHover = 0
-local consultingZoneImage = nil
-local consultingZoneLoadAttempted = false
-local officeBackgroundImage = nil
-local officeBackgroundLoadAttempted = false
-local moneyIconImage = nil
-local moneyIconLoadAttempted = false
-local coverQuadCache = setmetatable({}, { __mode = "k" })
-
 local cards = {}
 local draggingCards = {}
 local dragRootCard = nil
@@ -92,17 +83,30 @@ local stickyDragMode = false
 local dragPressStartScreenX = nil
 local dragPressStartScreenY = nil
 local panningWorld = false
-local newDayButtonPressed = false
-local newDayButtonHovered = false
 
-local consumeMoneyAtConsulting
-local spawnMoneyForFeature
+local coffeeMachineTimer = 0
+
+local officeBackgroundImage = nil
+local officeBackgroundLoadAttempted = false
+local moneyIconImage = nil
+local moneyIconLoadAttempted = false
+local coverQuadCache = setmetatable({}, { __mode = "k" })
+
+-- Forward declarations
 local createSideBounceMotion
 local clampCamera
 local gameToWorld
 local worldToGame
-local getNewDayButtonRect
-local getConsultingRect
+local spawnCard
+local removeCardInstance
+local countCardsByType
+local spawnBurnoutForWorker
+local addMoney
+local spendMoney
+local spawnMoneyCards
+local removeMoneyCards
+
+-- ── Helper functions ──────────────────────────────────────────────────────────
 
 local function clamp(value, minValue, maxValue)
     return math.max(minValue, math.min(maxValue, value))
@@ -122,57 +126,15 @@ local function easeOutQuad(t)
     return 1 - (inv * inv)
 end
 
-local function getConsultingZoneImage()
-    if consultingZoneImage or consultingZoneLoadAttempted then
-        return consultingZoneImage
-    end
-
-    consultingZoneLoadAttempted = true
-
-    local ok, loadedImage = pcall(love.graphics.newImage, CONSULTING_ICON_PATH)
-    if not ok then
-        return nil
-    end
-
-    loadedImage:setFilter("linear", "linear")
-    consultingZoneImage = loadedImage
-    return consultingZoneImage
-end
-
-local circleBgIconImage = nil
-local circleBgIconLoadAttempted = false
-
-local function getCircleBgIconImage()
-    if circleBgIconImage or circleBgIconLoadAttempted then
-        return circleBgIconImage
-    end
-
-    circleBgIconLoadAttempted = true
-
-    local ok, loadedImage = pcall(love.graphics.newImage, CIRCLE_BG_ICON_PATH)
-    if not ok then
-        return nil
-    end
-
-    loadedImage:setFilter("linear", "linear")
-    circleBgIconImage = loadedImage
-    return circleBgIconImage
-end
-
 local function getOfficeBackgroundImage()
     if officeBackgroundImage or officeBackgroundLoadAttempted then
         return officeBackgroundImage
     end
-
     officeBackgroundLoadAttempted = true
-
-    local ok, loadedImage = pcall(love.graphics.newImage, OFFICE_BACKGROUND_PATH)
-    if not ok then
-        return nil
-    end
-
-    loadedImage:setFilter("linear", "linear")
-    officeBackgroundImage = loadedImage
+    local ok, img = pcall(love.graphics.newImage, OFFICE_BACKGROUND_PATH)
+    if not ok then return nil end
+    img:setFilter("linear", "linear")
+    officeBackgroundImage = img
     return officeBackgroundImage
 end
 
@@ -180,100 +142,35 @@ local function getMoneyIconImage()
     if moneyIconImage or moneyIconLoadAttempted then
         return moneyIconImage
     end
-
     moneyIconLoadAttempted = true
-
-    local ok, loadedImage = pcall(love.graphics.newImage, MONEY_SMALL_ICON_PATH)
-    if not ok then
-        return nil
-    end
-
-    loadedImage:setFilter("linear", "linear")
-    moneyIconImage = loadedImage
+    local ok, img = pcall(love.graphics.newImage, MONEY_SMALL_ICON_PATH)
+    if not ok then return nil end
+    img:setFilter("linear", "linear")
+    moneyIconImage = img
     return moneyIconImage
 end
 
 local function drawImageCover(image, x, y, width, height)
     local imageWidth = image:getWidth()
     local imageHeight = image:getHeight()
-    if imageWidth <= 0 or imageHeight <= 0 or width <= 0 or height <= 0 then
-        return
-    end
-
+    if imageWidth <= 0 or imageHeight <= 0 or width <= 0 or height <= 0 then return end
     local scale = math.max(width / imageWidth, height / imageHeight)
     local sourceWidth = width / scale
     local sourceHeight = height / scale
     local sourceX = (imageWidth - sourceWidth) * 0.5
     local sourceY = (imageHeight - sourceHeight) * 0.5
-
     local quad = coverQuadCache[image]
     if not quad then
         quad = love.graphics.newQuad(0, 0, 1, 1, imageWidth, imageHeight)
         coverQuadCache[image] = quad
     end
     quad:setViewport(sourceX, sourceY, sourceWidth, sourceHeight, imageWidth, imageHeight)
-
-    love.graphics.draw(
-        image,
-        quad,
-        x,
-        y,
-        0,
-        width / sourceWidth,
-        height / sourceHeight
-    )
-end
-
-local function drawConsultingPriceLine(x, y, width, price, viewportScale)
-    local fontScale = 1 / viewportScale
-    local numericPrice = math.max(0, math.floor(tonumber(price) or 0))
-    local labelText = "Preis:"
-    local amountText = string.format("%d x", numericPrice)
-    local iconHeightFactor = 0.9
-
-    local font = love.graphics.getFont()
-    local textHeight = font:getHeight() * fontScale
-    local labelWidth = font:getWidth(labelText) * fontScale
-    local amountWidth = font:getWidth(amountText) * fontScale
-
-    local iconWidth = 0
-    local iconHeight = 0
-    local iconGap = 0
-    local moneyIcon = getMoneyIconImage()
-    if moneyIcon then
-        iconHeight = textHeight * iconHeightFactor
-        iconWidth = moneyIcon:getWidth() * (iconHeight / moneyIcon:getHeight())
-        iconGap = math.max(4, math.floor(textHeight * 0.3))
-    end
-
-    local sectionGap = math.max(8, math.floor(textHeight * 0.45))
-    local contentWidth = labelWidth + sectionGap + amountWidth + iconGap + iconWidth
-    local startX = x + (width - contentWidth) * 0.5
-    local textY = y
-
-    local textR, textG, textB, textA = love.graphics.getColor()
-
-    love.graphics.print(labelText, startX, textY, 0, fontScale, fontScale)
-
-    local amountX = startX + labelWidth + sectionGap
-    love.graphics.print(amountText, amountX, textY, 0, fontScale, fontScale)
-
-    if moneyIcon then
-        local iconX = amountX + amountWidth + iconGap
-        local iconY = textY + (textHeight - iconHeight) * 0.5
-        local iconColor = Theme.colors.icon
-        love.graphics.setColor(iconColor[1], iconColor[2], iconColor[3], textA or 1)
-        love.graphics.draw(moneyIcon, iconX, iconY, 0, iconHeight / moneyIcon:getHeight(),
-            iconHeight / moneyIcon:getHeight())
-        love.graphics.setColor(textR, textG, textB, textA)
-    end
+    love.graphics.draw(image, quad, x, y, 0, width / sourceWidth, height / sourceHeight)
 end
 
 local function getCameraViewSize()
     local zoom = camera.zoom
-    if zoom <= 0 then
-        zoom = 1
-    end
+    if zoom <= 0 then zoom = 1 end
     return APP_WIDTH / zoom, APP_HEIGHT / zoom
 end
 
@@ -291,52 +188,21 @@ local function setCameraCenteredOn(worldX, worldY)
 end
 
 gameToWorld = function(gameX, gameY)
-    if gameX == nil or gameY == nil then
-        return nil, nil
-    end
+    if gameX == nil or gameY == nil then return nil, nil end
     local zoom = camera.zoom
-    if zoom <= 0 then
-        zoom = 1
-    end
+    if zoom <= 0 then zoom = 1 end
     return camera.x + (gameX / zoom), camera.y + (gameY / zoom)
 end
 
 worldToGame = function(worldX, worldY)
-    if worldX == nil or worldY == nil then
-        return nil, nil
-    end
+    if worldX == nil or worldY == nil then return nil, nil end
     local zoom = camera.zoom
-    if zoom <= 0 then
-        zoom = 1
-    end
+    if zoom <= 0 then zoom = 1 end
     return (worldX - camera.x) * zoom, (worldY - camera.y) * zoom
 end
 
-getNewDayButtonRect = function()
-    return {
-        x = APP_WIDTH - NEW_DAY_BUTTON.width - NEW_DAY_BUTTON.marginRight,
-        y = APP_HEIGHT - NEW_DAY_BUTTON.height - NEW_DAY_BUTTON.marginBottom,
-        width = NEW_DAY_BUTTON.width,
-        height = NEW_DAY_BUTTON.height,
-    }
-end
-
-getConsultingRect = function()
-    local baseY = APP_HEIGHT - CONSULTING_ZONE.visibleHeight
-    local lift = CONSULTING_ZONE.hoverLift * consultingHover
-    return {
-        x = CONSULTING_ZONE.marginLeft,
-        y = baseY - lift,
-        width = CONSULTING_ZONE.width,
-        height = CONSULTING_ZONE.height,
-    }
-end
-
 local function copyState(value)
-    if type(value) ~= "table" then
-        return value
-    end
-
+    if type(value) ~= "table" then return value end
     local out = {}
     for k, v in pairs(value) do
         out[copyState(k)] = copyState(v)
@@ -351,23 +217,16 @@ local function allocateCardId()
 end
 
 local function getCardById(cardId)
-    if cardId == nil then
-        return nil
-    end
-
+    if cardId == nil then return nil end
     for _, card in ipairs(cards) do
-        if card.id == cardId then
-            return card
-        end
+        if card.id == cardId then return card end
     end
     return nil
 end
 
 local function isCardDragging(cardToFind)
     for _, card in ipairs(draggingCards) do
-        if card == cardToFind then
-            return true
-        end
+        if card == cardToFind then return true end
     end
     return false
 end
@@ -378,66 +237,48 @@ end
 
 local function bringCardsToFront(cardsToRaise)
     local selected = {}
-    for _, card in ipairs(cardsToRaise) do
-        selected[card] = true
-    end
-
+    for _, card in ipairs(cardsToRaise) do selected[card] = true end
     local reordered = {}
     for _, card in ipairs(cards) do
-        if not selected[card] then
-            table.insert(reordered, card)
-        end
+        if not selected[card] then table.insert(reordered, card) end
     end
     for _, card in ipairs(cards) do
-        if selected[card] then
-            table.insert(reordered, card)
-        end
+        if selected[card] then table.insert(reordered, card) end
     end
-
     cards = reordered
 end
 
-local function removeCardInstance(cardToRemove)
-    if not cardToRemove then
-        return
-    end
-
+removeCardInstance = function(cardToRemove)
+    if not cardToRemove then return end
     for i = #cards, 1, -1 do
         if cards[i] == cardToRemove then
             table.remove(cards, i)
             break
         end
     end
-
     for i = #draggingCards, 1, -1 do
         if draggingCards[i] == cardToRemove then
             table.remove(draggingCards, i)
         end
     end
-
-    if dragRootCard == cardToRemove then
-        dragRootCard = nil
-    end
-
+    if dragRootCard == cardToRemove then dragRootCard = nil end
     for _, other in ipairs(cards) do
         if other.stackParentId == cardToRemove.id then
             other.stackParentId = nil
+        end
+        if other.recipePartnerId == cardToRemove.id then
+            other.recipePartnerId = nil
+            other.recipeActive = false
+            other.recipeElapsed = 0
+            other.workProgress = 0
         end
     end
 end
 
 local function getDirectChild(parentCard, excludedCards)
     for _, candidate in ipairs(cards) do
-        if candidate.stackParentId == parentCard.id and not (excludedCards and excludedCards[candidate]) then
-            return candidate
-        end
-    end
-    return nil
-end
-
-local function getDirectChildOfType(parentCard, cardType)
-    for _, candidate in ipairs(cards) do
-        if candidate.stackParentId == parentCard.id and candidate.cardType == cardType then
+        if candidate.stackParentId == parentCard.id
+            and not (excludedCards and excludedCards[candidate]) then
             return candidate
         end
     end
@@ -448,12 +289,8 @@ local function isDescendant(card, potentialAncestor)
     local current = card
     while current and current.stackParentId do
         local parent = getCardById(current.stackParentId)
-        if not parent then
-            return false
-        end
-        if parent == potentialAncestor then
-            return true
-        end
+        if not parent then return false end
+        if parent == potentialAncestor then return true end
         current = parent
     end
     return false
@@ -461,67 +298,309 @@ end
 
 local function collectStackFrom(card)
     local selected = {}
-
     local function collectFrom(root)
         table.insert(selected, root)
         for _, candidate in ipairs(cards) do
-            if candidate.stackParentId == root.id then
-                collectFrom(candidate)
-            end
+            if candidate.stackParentId == root.id then collectFrom(candidate) end
         end
     end
-
     collectFrom(card)
     return selected
 end
 
+countCardsByType = function(cardType, subType)
+    local count = 0
+    for _, card in ipairs(cards) do
+        if card.cardType == cardType then
+            if subType == nil or card.subType == subType then
+                count = count + 1
+            end
+        end
+    end
+    return count
+end
+
+-- Count how many money cards are in a chain starting at this card's child
+local function countMoneyChainOnCard(parentCard)
+    local count = 0
+    local current = parentCard
+    while current do
+        local child = getDirectChild(current, nil)
+        if child and child.cardType == "money" then
+            count = count + 1
+            current = child
+        else
+            break
+        end
+    end
+    return count
+end
+
+-- Collect money chain starting from direct child
+local function collectMoneyChainOnCard(parentCard)
+    local result = {}
+    local current = parentCard
+    while current do
+        local child = getDirectChild(current, nil)
+        if child and child.cardType == "money" then
+            table.insert(result, child)
+            current = child
+        else
+            break
+        end
+    end
+    return result
+end
+
+-- Spawn money cards near a position (used by sprint cashout)
+spawnMoneyCards = function(amount, worldX, worldY)
+    for i = 1, math.max(0, amount) do
+        local mx = clamp((worldX or WORLD_WIDTH * 0.5) + (i - 1) * 22, 0, WORLD_WIDTH - CARD_WIDTH)
+        local my = clamp((worldY or WORLD_HEIGHT * 0.4), 0, WORLD_HEIGHT - CARD_HEIGHT)
+        local mc = spawnCard("money", mx, my, { moneyAmount = 1 })
+        mc.motionState = createSideBounceMotion(mx, my, clamp(mx + 70, 0, WORLD_WIDTH - CARD_WIDTH), my)
+    end
+end
+
+-- Remove money cards from board, consuming up to `amount` money units.
+-- Returns true if fully paid, false if bankrupt.
+removeMoneyCards = function(amount)
+    local moneyCards = {}
+    for _, card in ipairs(cards) do
+        if card.cardType == "money" then
+            table.insert(moneyCards, card)
+        end
+    end
+    -- Check if we have enough
+    local total = 0
+    for _, mc in ipairs(moneyCards) do total = total + (mc.moneyAmount or 1) end
+    if total < amount then
+        -- Remove all money (bankrupt)
+        for _, mc in ipairs(moneyCards) do removeCardInstance(mc) end
+        return false
+    end
+    -- Remove cards until we've covered the amount
+    local removed = 0
+    for _, mc in ipairs(moneyCards) do
+        if removed >= amount then break end
+        removed = removed + (mc.moneyAmount or 1)
+        removeCardInstance(mc)
+    end
+    return true
+end
+
+addMoney = function(amount)
+    spawnMoneyCards(amount, WORLD_WIDTH * 0.5, WORLD_HEIGHT * 0.4)
+end
+
+spendMoney = function(amount)
+    return removeMoneyCards(amount)
+end
+
+-- ── Card creation ─────────────────────────────────────────────────────────────
+
+local function createCard(config)
+    return Card.new({
+        id = config.id or allocateCardId(),
+        cardType = config.cardType,
+        role = config.role,
+        subType = config.subType,
+        title = config.title,
+        effect = config.effect,
+        iconPath = config.iconPath,
+        maxCapacity = config.maxCapacity,
+        capacity = config.capacity,
+        costTotal = config.costTotal,
+        costRemaining = config.costRemaining,
+        value = config.value,
+        moneyAmount = config.moneyAmount,
+        insightsRemaining = config.insightsRemaining,
+        maxFocus = config.maxFocus,
+        focus = config.focus,
+        recipeActive = config.recipeActive,
+        recipeElapsed = config.recipeElapsed,
+        recipeDuration = config.recipeDuration,
+        recipePartnerId = config.recipePartnerId,
+        hasDeadline = config.hasDeadline,
+        ownerWorkerId = config.ownerWorkerId,
+        stackParentId = config.stackParentId,
+        workProgress = config.workProgress,
+        width = config.width or CARD_WIDTH,
+        height = config.height or CARD_HEIGHT,
+        style = config.style,
+        worldWidth = WORLD_WIDTH,
+        worldHeight = WORLD_HEIGHT,
+        x = config.x,
+        y = config.y,
+        targetX = config.targetX,
+        targetY = config.targetY,
+    })
+end
+
+local function createBoardObject(config)
+    return createCard(config)
+end
+
+-- Spawn a card by def key at world position, with optional overrides
+spawnCard = function(defKey, worldX, worldY, overrides)
+    local config = CardDefs.createConfig(defKey, overrides or {})
+    config.x = clamp(worldX or 0, 0, WORLD_WIDTH - CARD_WIDTH)
+    config.y = clamp(worldY or 0, 0, WORLD_HEIGHT - CARD_HEIGHT)
+    config.targetX = config.x
+    config.targetY = config.y
+    local card = createCard(config)
+    table.insert(cards, card)
+    return card
+end
+
+createSideBounceMotion = function(startX, startY, endX, endY, config)
+    local motion = {
+        kind = "sideBounce",
+        elapsed = 0,
+        duration = 0.62,
+        restHold = 0.06,
+        startX = startX,
+        startY = startY,
+        endX = endX,
+        endY = endY,
+        arcHeights = { 36, 22, 0 },
+        arcSplits = { 0.46, 0.76 },
+        xSplits = { 0.58, 0.86 },
+        tilt = 0.11,
+    }
+    if type(config) == "table" then
+        for key, value in pairs(config) do motion[key] = value end
+    end
+    return motion
+end
+
+-- Spawn a Burnout card near the burned-out worker
+spawnBurnoutForWorker = function(workerCard)
+    if not workerCard then return end
+    workerCard.isBurnedOut = true
+    local bx = clamp(workerCard.x - 30, 0, WORLD_WIDTH - CARD_WIDTH)
+    local by = clamp(workerCard.y - CARD_HEIGHT - 20, 0, WORLD_HEIGHT - CARD_HEIGHT)
+    local burnoutCard = spawnCard("burnout", bx, by, {
+        ownerWorkerId = workerCard.id,
+        title = "Burnout",
+        effect = workerCard.title .. " is burned out",
+    })
+    burnoutCard.motionState = createSideBounceMotion(
+        workerCard.x, workerCard.y,
+        clamp(bx, 0, WORLD_WIDTH - CARD_WIDTH),
+        clamp(by, 0, WORLD_HEIGHT - CARD_HEIGHT)
+    )
+    bringCardsToFront({ burnoutCard })
+end
+
+-- ── Starting board ────────────────────────────────────────────────────────────
+
+local function createStartingCards()
+    local result = {}
+    for _, entry in ipairs(CardDefs.STARTING_LAYOUT) do
+        local wx = GRID_ORIGIN_X + entry.col * GRID_COL_SPACING
+        local wy = GRID_ORIGIN_Y + entry.row * GRID_ROW_SPACING
+        wx = clamp(wx, 0, WORLD_WIDTH - CARD_WIDTH)
+        wy = clamp(wy, 0, WORLD_HEIGHT - CARD_HEIGHT)
+        local config = CardDefs.createConfig(entry.defKey, { x = wx, y = wy, targetX = wx, targetY = wy })
+        local card = createCard(config)
+        table.insert(result, card)
+    end
+    return result
+end
+
+local function restoreCardsFromSnapshot(cardSnapshots)
+    local restoredCards = {}
+    local maxId = 0
+    for _, snapshot in ipairs(cardSnapshots) do
+        local restored = createBoardObject(snapshot)
+        table.insert(restoredCards, restored)
+        if restored.id and restored.id > maxId then maxId = restored.id end
+    end
+    if maxId >= (state.nextCardId or 1) then
+        state.nextCardId = maxId + 1
+    end
+    return restoredCards
+end
+
+local function bootstrapCards()
+    if type(state.cards) == "table" then
+        cards = restoreCardsFromSnapshot(state.cards)
+        return
+    end
+    cards = createStartingCards()
+end
+
+local function serializeCards()
+    local snapshots = {}
+    for _, card in ipairs(cards) do
+        if not card.shipState and not (card.motionState and card.motionState.skipSerialize) then
+            table.insert(snapshots, card:getSnapshot())
+        end
+    end
+    state.cards = snapshots
+end
+
+-- ── Stacking / snap rules ─────────────────────────────────────────────────────
+
 local function canAttachCard(cardToSnap, targetCard, excludedCards)
-    if not cardToSnap or not targetCard then
-        return false
-    end
+    if not cardToSnap or not targetCard then return false end
+    if cardToSnap == targetCard then return false end
+    if isCardLocked(cardToSnap) or isCardLocked(targetCard) then return false end
+    if isDescendant(targetCard, cardToSnap) then return false end
 
-    if cardToSnap == targetCard then
-        return false
-    end
+    -- Person cards can never stack on anything
+    if cardToSnap.cardType == "person" then return false end
 
-    if isCardLocked(cardToSnap) or isCardLocked(targetCard) then
-        return false
-    end
-
-    if isDescendant(targetCard, cardToSnap) then
-        return false
-    end
-
-    if cardToSnap.cardType == "person" then
-        return false
-    end
-
-    if cardToSnap.cardType == "feature" then
-        if cardToSnap:isFeatureComplete() then
-            return false
-        end
-        if targetCard.cardType ~= "person" then
-            return false
-        end
-
+    -- Money stacks on money (keep existing)
+    if cardToSnap.cardType == "money" and targetCard.cardType == "money" then
         local existingChild = getDirectChild(targetCard, excludedCards)
-        if existingChild and existingChild ~= cardToSnap then
-            return false
-        end
-
+        if existingChild and existingChild ~= cardToSnap then return false end
         return true
     end
 
-    if cardToSnap.cardType == "money" then
-        if targetCard.cardType ~= "money" then
+    -- Money stacks on hire_market and business_opportunity only
+    if cardToSnap.cardType == "money" and targetCard.cardType == "infrastructure" then
+        if targetCard.role ~= "hire_market" and targetCard.role ~= "business_opportunity" then
             return false
         end
-
         local existingChild = getDirectChild(targetCard, excludedCards)
-        if existingChild and existingChild ~= cardToSnap then
-            return false
-        end
+        if existingChild and existingChild ~= cardToSnap then return false end
+        return true
+    end
 
+    -- Coffee can stack on a person (to restore focus) — bypasses the one-child rule
+    if cardToSnap.cardType == "coffee" and targetCard.cardType == "person" then
+        if targetCard.recipeActive then return false end
+        return true
+    end
+
+    -- Burnout can stack on a coffee card (player drops burnout on coffee to clear it)
+    if cardToSnap.cardType == "burnout" and targetCard.cardType == "coffee" then
+        local existingChild = getDirectChild(targetCard, excludedCards)
+        if existingChild and existingChild ~= cardToSnap then return false end
+        return true
+    end
+
+    -- Burnout cannot stack on anything else
+    if cardToSnap.cardType == "burnout" then return false end
+    -- Deadline cannot be manually stacked (attached by sprint logic only)
+    if cardToSnap.cardType == "deadline" then return false end
+    -- Infrastructure cannot stack on anything
+    if cardToSnap.cardType == "infrastructure" then return false end
+
+    -- Reject if either card is already mid-recipe
+    if cardToSnap.recipeActive then return false end
+    if targetCard.recipeActive then return false end
+
+    -- Check if a recipe exists for this pair
+    local recipe = Recipes.findMatch(targetCard, cardToSnap, cards)
+    if recipe then
+        -- Don't allow a second work item on a person who already has one
+        if targetCard.cardType == "person" then
+            local existingChild = getDirectChild(targetCard, excludedCards)
+            if existingChild and existingChild ~= cardToSnap then return false end
+        end
         return true
     end
 
@@ -531,7 +610,6 @@ end
 local function findBestStackTarget(cardToSnap, excludedCards)
     local best = nil
     local bestDistanceSquared = STACK_SNAP_DISTANCE * STACK_SNAP_DISTANCE
-
     for _, other in ipairs(cards) do
         if other ~= cardToSnap and not (excludedCards and excludedCards[other]) then
             if canAttachCard(cardToSnap, other, excludedCards) then
@@ -540,19 +618,13 @@ local function findBestStackTarget(cardToSnap, excludedCards)
                 local dx = cardToSnap.targetX - snapX
                 local dy = cardToSnap.targetY - snapY
                 local distanceSquared = dx * dx + dy * dy
-
                 if distanceSquared <= bestDistanceSquared then
                     bestDistanceSquared = distanceSquared
-                    best = {
-                        parent = other,
-                        x = snapX,
-                        y = snapY,
-                    }
+                    best = { parent = other, x = snapX, y = snapY }
                 end
             end
         end
     end
-
     return best
 end
 
@@ -562,7 +634,6 @@ local function applyStackSnap(cardToSnap, excludedCards)
         cardToSnap.stackParentId = nil
         return false
     end
-
     cardToSnap.stackParentId = target.parent.id
     cardToSnap.targetX = clamp(target.x, 0, WORLD_WIDTH - (cardToSnap.width or CARD_WIDTH))
     cardToSnap.targetY = clamp(target.y, 0, WORLD_HEIGHT - (cardToSnap.height or CARD_HEIGHT))
@@ -574,18 +645,23 @@ local function beginDragSelection(selection, pointerX, pointerY)
     dragRootCard = selection[1]
 
     local selectedById = {}
-    for _, card in ipairs(selection) do
-        selectedById[card.id] = true
-    end
+    for _, card in ipairs(selection) do selectedById[card.id] = true end
 
     for _, card in ipairs(selection) do
         if card.stackParentId and not selectedById[card.stackParentId] then
+            -- Cancel recipe if this card is in an active recipe
+            if card.recipeActive or card.recipePartnerId then
+                Recipes.cancelRecipe(card, cards)
+            end
             card.stackParentId = nil
         end
     end
 
     for _, card in ipairs(cards) do
         if card.stackParentId and selectedById[card.stackParentId] and not selectedById[card.id] then
+            if card.recipeActive or card.recipePartnerId then
+                Recipes.cancelRecipe(card, cards)
+            end
             card.stackParentId = nil
         end
     end
@@ -596,31 +672,19 @@ local function beginDragSelection(selection, pointerX, pointerY)
 end
 
 local function endDragSelection()
-    if #draggingCards == 0 then
-        return
-    end
+    if #draggingCards == 0 then return end
 
     local rootCard = dragRootCard or draggingCards[1]
-    if consumeMoneyAtConsulting(rootCard) then
-        for _, card in ipairs(draggingCards) do
-            card:endDrag()
-        end
-        draggingCards = {}
-        dragRootCard = nil
-        return
-    end
-
-    local beforeSnapX = rootCard.targetX
-    local beforeSnapY = rootCard.targetY
 
     for _, card in ipairs(draggingCards) do
         card:endDrag()
     end
 
     local excludedCards = {}
-    for _, card in ipairs(draggingCards) do
-        excludedCards[card] = true
-    end
+    for _, card in ipairs(draggingCards) do excludedCards[card] = true end
+
+    local beforeSnapX = rootCard.targetX
+    local beforeSnapY = rootCard.targetY
 
     applyStackSnap(rootCard, excludedCards)
 
@@ -639,45 +703,205 @@ local function endDragSelection()
     dragRootCard = nil
 end
 
-local function drawDragStackShadow()
-    if #draggingCards == 0 then
-        return
-    end
+-- ── Recipe system update ──────────────────────────────────────────────────────
 
-    local minX = math.huge
-    local minY = math.huge
-    local maxX = -math.huge
-    local maxY = -math.huge
-    local shadowSource = nil
+-- Build the sprint callbacks table (used by Sprint and Recipes)
+local function makeCallbacks()
+    return {
+        spawnCard = function(defKey, x, y, overrides)
+            return spawnCard(defKey, x, y, overrides)
+        end,
+        removeCard = function(card)
+            removeCardInstance(card)
+        end,
+        getCardById = function(id)
+            return getCardById(id)
+        end,
+        getAllCards = function()
+            return cards
+        end,
+        countCardsByType = function(cardType, subType)
+            return countCardsByType(cardType, subType)
+        end,
+        getSalaryCost = function(card)
+            return CardDefs.getSalaryCost(card)
+        end,
+        addMoney = function(amount, x, y)
+            spawnMoneyCards(amount, x, y)
+        end,
+        spendMoney = function(amount)
+            return removeMoneyCards(amount)
+        end,
+        spawnBurnoutForWorker = function(workerCard)
+            spawnBurnoutForWorker(workerCard)
+        end,
+        onMajorFeatureShipped = function()
+            Sprint.recordMajorFeatureShipped()
+        end,
+    }
+end
 
-    for _, card in ipairs(draggingCards) do
-        if card.cardType ~= "opportunity" then
-            if not shadowSource then
-                shadowSource = card
+local function updateRecipes(dt)
+    -- Check for newly stacked pairs that should start a recipe
+    for _, childCard in ipairs(cards) do
+        if childCard.stackParentId and not childCard.recipeActive then
+            -- Skip types that can never be recipe children
+            if childCard.cardType ~= "money" and childCard.cardType ~= "person"
+                and childCard.cardType ~= "infrastructure" and childCard.cardType ~= "deadline"
+                and childCard.cardType ~= "shipped" then
+                -- Note: coffee and burnout CAN be recipe children (dropped on workers/coffee)
+                local parentCard = getCardById(childCard.stackParentId)
+                if parentCard and not parentCard.recipeActive and not isCardLocked(childCard) and not isCardLocked(parentCard) then
+                    local recipe = Recipes.findMatch(parentCard, childCard, cards)
+                    if recipe then
+                        Recipes.startRecipe(parentCard, childCard, recipe, cards)
+                        if recipe.instantComplete then
+                            -- Instant recipe: complete immediately
+                            local callbacks = makeCallbacks()
+                            Recipes.complete(parentCard, childCard, recipe, cards, callbacks)
+                        end
+                    end
+                end
             end
-
-            local centerX = card.x + card.width * 0.5
-            local centerY = card.y + card.height * 0.5
-            local halfW = card.width * card.scale * 0.5
-            local halfH = card.height * card.scale * 0.5
-            local left = centerX - halfW
-            local top = centerY - halfH
-            local right = centerX + halfW
-            local bottom = centerY + halfH
-
-            if left < minX then minX = left end
-            if top < minY then minY = top end
-            if right > maxX then maxX = right end
-            if bottom > maxY then maxY = bottom end
         end
     end
 
-    if not shadowSource then
-        return
+    -- Advance active recipes
+    local toComplete = {}
+    for _, childCard in ipairs(cards) do
+        if childCard.recipeActive then
+            childCard.recipeElapsed = (childCard.recipeElapsed or 0) + dt
+            childCard.workProgress = childCard.recipeElapsed -- alias for drawWorkBars
+
+            if childCard.recipeElapsed >= (childCard.recipeDuration or 0) then
+                local parentCard = getCardById(childCard.recipePartnerId)
+                if parentCard then
+                    table.insert(toComplete, { parent = parentCard, child = childCard })
+                else
+                    -- Parent gone (removed) — cancel
+                    Recipes.cancelRecipe(childCard, cards)
+                end
+            end
+        end
     end
 
-    UiPanel.drawShadow(minX, minY, (maxX - minX), (maxY - minY), UiShadow.capture(shadowSource, "cardDrag"))
+    -- Complete recipes outside the iteration loop
+    local callbacks = makeCallbacks()
+    for _, pair in ipairs(toComplete) do
+        -- Find the recipe again (need it for outputs)
+        local recipe = Recipes.findMatch(pair.parent, pair.child, cards)
+        if recipe then
+            local result = Recipes.complete(pair.parent, pair.child, recipe, cards, callbacks)
+            if result then
+                -- Animate the output card with a bounce
+                local settleX = clamp(pair.child.x + 90, 0, WORLD_WIDTH - CARD_WIDTH)
+                local settleY = clamp(pair.child.y, 0, WORLD_HEIGHT - CARD_HEIGHT)
+                result.motionState = createSideBounceMotion(
+                    pair.child.x, pair.child.y, settleX, settleY
+                )
+                bringCardsToFront({ result })
+            end
+        end
+    end
 end
+
+-- ── Coffee Machine passive ────────────────────────────────────────────────────
+
+local function updateCoffeeMachine(dt)
+    -- Find coffee machine card
+    local machine = nil
+    for _, card in ipairs(cards) do
+        if card.role == "coffee_machine" then
+            machine = card
+            break
+        end
+    end
+    if not machine then return end
+
+    coffeeMachineTimer = coffeeMachineTimer + dt
+    if coffeeMachineTimer >= COFFEE_MACHINE_INTERVAL then
+        local coffeeOnBoard = countCardsByType("coffee")
+        if coffeeOnBoard < COFFEE_MAX_ON_BOARD then
+            coffeeMachineTimer = 0
+            local cx = clamp(machine.x + CARD_WIDTH + 30, 0, WORLD_WIDTH - CARD_WIDTH)
+            local cy = clamp(machine.y, 0, WORLD_HEIGHT - CARD_HEIGHT)
+            local coffeeCard = spawnCard("coffee", machine.x, machine.y, {})
+            coffeeCard.motionState = createSideBounceMotion(machine.x, machine.y, cx, cy)
+            bringCardsToFront({ coffeeCard })
+        end
+    end
+end
+
+-- ── Hire Market and Business Opportunity ─────────────────────────────────────
+
+local HIRE_SEQUENCE = { "backend_dev", "fullstack_dev" }
+local HIRE_RANDOM_POOL = { "frontend_dev", "backend_dev", "qa_tester" }
+
+local function triggerHireMarket(hireMarketCard)
+    -- Consume 3 money cards from the chain on hire market
+    local chain = collectMoneyChainOnCard(hireMarketCard)
+    if #chain < HIRE_MARKET_COST then return end
+
+    for i = 1, HIRE_MARKET_COST do
+        removeCardInstance(chain[i])
+    end
+    spendMoney(HIRE_MARKET_COST)
+
+    -- Determine which dev to hire
+    local hireCount = gameState.hireCount or 0
+    local defKey
+    if hireCount < #HIRE_SEQUENCE then
+        defKey = HIRE_SEQUENCE[hireCount + 1]
+    else
+        defKey = HIRE_RANDOM_POOL[math.random(#HIRE_RANDOM_POOL)]
+    end
+    gameState.hireCount = hireCount + 1
+
+    local tx = clamp(hireMarketCard.x + CARD_WIDTH + 50, 0, WORLD_WIDTH - CARD_WIDTH)
+    local ty = clamp(hireMarketCard.y, 0, WORLD_HEIGHT - CARD_HEIGHT)
+    local newDev = spawnCard(defKey, hireMarketCard.x, hireMarketCard.y, {})
+    newDev.motionState = createSideBounceMotion(hireMarketCard.x, hireMarketCard.y, tx, ty)
+    bringCardsToFront({ newDev })
+
+    if defKey == "backend_dev" then
+        Sprint.recordBackendDevHired()
+    end
+end
+
+local function triggerBusinessOpportunity(bizOppCard)
+    -- Consume 2 money cards from chain
+    local chain = collectMoneyChainOnCard(bizOppCard)
+    if #chain < BUSINESS_OPP_COST then return end
+
+    for i = 1, BUSINESS_OPP_COST do
+        removeCardInstance(chain[i])
+    end
+    spendMoney(BUSINESS_OPP_COST)
+
+    -- Spawn 2 client requests
+    for i = 1, 2 do
+        local cx = clamp(bizOppCard.x + (i - 1) * (CARD_WIDTH + 20) - CARD_WIDTH, 0, WORLD_WIDTH - CARD_WIDTH)
+        local cy = clamp(bizOppCard.y - CARD_HEIGHT - 30, 0, WORLD_HEIGHT - CARD_HEIGHT)
+        local req = spawnCard("client_request", bizOppCard.x, bizOppCard.y, {})
+        req.motionState = createSideBounceMotion(bizOppCard.x, bizOppCard.y, cx, cy)
+        bringCardsToFront({ req })
+    end
+end
+
+local function checkInfrastructureTriggers()
+    for _, card in ipairs(cards) do
+        if card.cardType == "infrastructure" then
+            local chain = collectMoneyChainOnCard(card)
+            if card.role == "hire_market" and #chain >= HIRE_MARKET_COST then
+                triggerHireMarket(card)
+            elseif card.role == "business_opportunity" and #chain >= BUSINESS_OPP_COST then
+                triggerBusinessOpportunity(card)
+            end
+        end
+    end
+end
+
+-- ── Rendering helpers ─────────────────────────────────────────────────────────
 
 local function drawOfficeBackground()
     local backgroundImage = getOfficeBackgroundImage()
@@ -686,258 +910,140 @@ local function drawOfficeBackground()
         drawImageCover(backgroundImage, 0, 0, WORLD_WIDTH, WORLD_HEIGHT)
         return
     end
-
     local fallbackColor = Theme.colors.background
     love.graphics.setColor(fallbackColor[1], fallbackColor[2], fallbackColor[3], fallbackColor[4] or 1)
     love.graphics.rectangle("fill", 0, 0, WORLD_WIDTH, WORLD_HEIGHT)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
-local function createCard(config)
-    return Card.new({
-        id = config.id or allocateCardId(),
-        cardType = config.cardType,
-        title = config.title,
-        effect = config.effect,
-        iconPath = config.iconPath,
-        maxCapacity = config.maxCapacity,
-        capacity = config.capacity,
-        costTotal = config.costTotal,
-        costRemaining = config.costRemaining,
-        value = config.value,
-        moneyAmount = config.moneyAmount,
-        insightsRemaining = config.insightsRemaining,
-        stackParentId = config.stackParentId,
-        workProgress = config.workProgress,
-        width = config.width or CARD_WIDTH,
-        height = config.height or CARD_HEIGHT,
-        style = config.style,
-        worldWidth = WORLD_WIDTH,
-        worldHeight = WORLD_HEIGHT,
-        x = config.x,
-        y = config.y,
-        targetX = config.targetX,
-        targetY = config.targetY,
-    })
+local function drawCardWithEffects(card, options)
+    options = options or {}
+    local drawOptions = {
+        skipShadow = options.skipShadow,
+        bodyFont = Theme.fonts.cardBody,
+        valueFont = Theme.fonts.cardBody,
+        alpha = card.renderAlpha or 1,
+    }
+    card:draw(Theme.fonts.cardHeader, drawOptions)
 end
 
-local function createBoosterPack(config)
-    return BoosterPack.new({
-        id = config.id or allocateCardId(),
-        title = config.title,
-        effect = config.effect,
-        insightsRemaining = config.insightsRemaining,
-        width = BOOSTER_PACK_WIDTH,
-        height = BOOSTER_PACK_HEIGHT,
-        worldWidth = WORLD_WIDTH,
-        worldHeight = WORLD_HEIGHT,
-        x = config.x,
-        y = config.y,
-        targetX = config.targetX,
-        targetY = config.targetY,
-    })
-end
-
-local function createBoardObject(config)
-    if config.objectType == "booster_pack" or config.cardType == "opportunity" then
-        return createBoosterPack(config)
+local function drawDragStackShadow()
+    if #draggingCards == 0 then return end
+    local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
+    local shadowSource = nil
+    for _, card in ipairs(draggingCards) do
+        if not shadowSource then shadowSource = card end
+        local centerX = card.x + card.width * 0.5
+        local centerY = card.y + card.height * 0.5
+        local halfW = card.width * card.scale * 0.5
+        local halfH = card.height * card.scale * 0.5
+        if centerX - halfW < minX then minX = centerX - halfW end
+        if centerY - halfH < minY then minY = centerY - halfH end
+        if centerX + halfW > maxX then maxX = centerX + halfW end
+        if centerY + halfH > maxY then maxY = centerY + halfH end
     end
-    return createCard(config)
+    if not shadowSource then return end
+    UiPanel.drawShadow(minX, minY, (maxX - minX), (maxY - minY), UiShadow.capture(shadowSource, "cardDrag"))
 end
 
-local function createDefaultCards()
-    local centeredX = (WORLD_WIDTH - CARD_WIDTH) * 0.5
-    local centeredY = (WORLD_HEIGHT - CARD_HEIGHT) * 0.5
-
-    local steveCard = createCard({
-        cardType = "person",
-        title = "Steve",
-        effect = "No special talents",
-        iconPath = STEVE_ICON_PATH,
-        maxCapacity = 2,
-        capacity = 2,
-        x = centeredX,
-        y = centeredY,
-        targetX = centeredX,
-        targetY = centeredY,
-        workProgress = 0,
-    })
-
-    local quickWinX = centeredX + CARD_WIDTH + 120
-    local quickWinY = centeredY - 20
-
-    local quickWinCard = createCard({
-        cardType = "feature",
-        title = "Quick Win",
-        costTotal = 2,
-        costRemaining = 2,
-        value = 1,
-        x = quickWinX,
-        y = quickWinY,
-        targetX = quickWinX,
-        targetY = quickWinY,
-    })
-
-    return { quickWinCard, steveCard }
-end
-
-local function restoreCardsFromSnapshot(cardSnapshots)
-    local restoredCards = {}
-    local maxId = 0
-
-    for _, snapshot in ipairs(cardSnapshots) do
-        local restored = createBoardObject(snapshot)
-        table.insert(restoredCards, restored)
-        if restored.id and restored.id > maxId then
-            maxId = restored.id
-        end
-    end
-
-    if maxId >= (state.nextCardId or 1) then
-        state.nextCardId = maxId + 1
-    end
-
-    return restoredCards
-end
-
-local function bootstrapCards()
-    if type(state.cards) == "table" then
-        cards = restoreCardsFromSnapshot(state.cards)
-        return
-    end
-
-    cards = createDefaultCards()
-end
-
-local function serializeCards()
-    local snapshots = {}
+local function updateAttachedCardTargets()
     for _, card in ipairs(cards) do
-        if not card.shipState and not (card.motionState and card.motionState.skipSerialize) then
-            table.insert(snapshots, card:getSnapshot())
-        end
-    end
-    state.cards = snapshots
-end
-
-local function startNewDay()
-    state.day = (state.day or 1) + 1
-
-    for _, card in ipairs(cards) do
-        if card.cardType == "person" then
-            card.capacity = card.maxCapacity or card.capacity
-        end
-    end
-end
-
-local function releaseCompletedFeature(featureCard, workerCard)
-    if not featureCard or not workerCard then
-        return
-    end
-
-    if featureCard.motionState or featureCard.shipState then
-        return
-    end
-
-    featureCard.stackParentId = nil
-    featureCard.costRemaining = 0
-
-    local moneyCard = spawnMoneyForFeature(featureCard)
-    local moneySettleX = clamp(featureCard.x + 92, 0, WORLD_WIDTH - CARD_WIDTH)
-
-    removeCardInstance(featureCard)
-
-    moneyCard.motionState = createSideBounceMotion(
-        moneyCard.x,
-        moneyCard.y,
-        moneySettleX,
-        clamp(moneyCard.y, 0, WORLD_HEIGHT - CARD_HEIGHT)
-    )
-    moneyCard.targetX = moneyCard.x
-    moneyCard.targetY = moneyCard.y
-    moneyCard.rotation = 0
-    moneyCard.renderAlpha = 1
-
-    bringCardsToFront({ moneyCard })
-end
-
-local function updateWorkerProgress(dt)
-    for _, workerCard in ipairs(cards) do
-        if workerCard.cardType == "person" then
-            local activeFeature = getDirectChildOfType(workerCard, "feature")
-
-            if not activeFeature or activeFeature:isFeatureComplete() then
-                workerCard.workProgress = 0
-            elseif workerCard.capacity and workerCard.capacity > 0 then
-                workerCard.workProgress = (workerCard.workProgress or 0) + dt
-
-                while workerCard.workProgress >= WORK_CYCLE_SECONDS and workerCard.capacity > 0 and activeFeature.costRemaining > 0 do
-                    workerCard.workProgress = workerCard.workProgress - WORK_CYCLE_SECONDS
-                    workerCard.capacity = workerCard.capacity - 1
-                    activeFeature.costRemaining = activeFeature.costRemaining - 1
-
-                    if activeFeature.costRemaining <= 0 then
-                        activeFeature.costRemaining = 0
-                        workerCard.workProgress = 0
-                        releaseCompletedFeature(activeFeature, workerCard)
-                        break
-                    end
-                end
+        if card.stackParentId and not card:isDragging() and not card.motionState then
+            local parent = getCardById(card.stackParentId)
+            if parent then
+                card.targetX = clamp(parent.targetX, 0, WORLD_WIDTH - (card.width or CARD_WIDTH))
+                card.targetY = clamp(parent.targetY + STACK_OFFSET_Y, 0, WORLD_HEIGHT - (card.height or CARD_HEIGHT))
+            else
+                card.stackParentId = nil
             end
         end
     end
 end
 
-spawnMoneyForFeature = function(featureCard)
-    local moneyCard = createCard({
-        cardType = "money",
-        title = "Money",
-        moneyAmount = featureCard.value or 1,
-        x = clamp(featureCard.x + 20, 0, WORLD_WIDTH - CARD_WIDTH),
-        y = clamp(featureCard.y + 10, 0, WORLD_HEIGHT - CARD_HEIGHT),
-        targetX = clamp(featureCard.targetX + 20, 0, WORLD_WIDTH - CARD_WIDTH),
-        targetY = clamp(featureCard.targetY + 10, 0, WORLD_HEIGHT - CARD_HEIGHT),
-    })
+local function drawWorkBars()
+    local workBarColors = Theme.colors.workBar
+    for _, childCard in ipairs(cards) do
+        if childCard.recipeActive and childCard.stackParentId then
+            local parentCard = getCardById(childCard.stackParentId)
+            if parentCard and not parentCard.motionState then
+                local duration = math.max(0.001, childCard.recipeDuration or 1)
+                local progress = clamp((childCard.recipeElapsed or 0) / duration, 0, 1)
 
-    table.insert(cards, moneyCard)
-    return moneyCard
-end
+                local barX = parentCard.x
+                local stackTopY = math.min(parentCard.y, childCard.y)
+                local barY = stackTopY - WORK_BAR_HEIGHT + 7
+                local innerPadding = 3
 
-createSideBounceMotion = function(startX, startY, endX, endY, config)
-    local motion = {
-        kind = "sideBounce",
-        elapsed = 0,
-        duration = 0.62,
-        restHold = 0.06,
-        startX = startX,
-        startY = startY,
-        endX = endX,
-        endY = endY,
-        arcHeights = { 36, 22, 0 },
-        arcSplits = { 0.46, 0.76 },
-        xSplits = { 0.58, 0.86 },
-        tilt = 0.11,
-    }
+                UiPanel.drawPanel(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, {
+                    bodyColor = workBarColors.track,
+                    borderColor = workBarColors.border,
+                })
 
-    if type(config) == "table" then
-        for key, value in pairs(config) do
-            motion[key] = value
+                local innerX = barX + innerPadding
+                local innerY = barY + innerPadding
+                local innerWidth = math.max(0, CARD_WIDTH - innerPadding * 2)
+                local innerHeight = math.max(0, WORK_BAR_HEIGHT - innerPadding * 2)
+                local progressWidth = innerWidth * progress
+
+                if progressWidth > 0 and innerHeight > 0 then
+                    love.graphics.stencil(function()
+                        love.graphics.rectangle("fill", innerX, innerY, progressWidth, innerHeight)
+                    end, "replace", 1)
+                    love.graphics.setStencilTest("equal", 1)
+                    UiPanel.drawSurface(innerX, innerY, innerWidth, innerHeight, workBarColors.border, {
+                        destLeft = 4, destRight = 4, destTop = 4, destBottom = 4,
+                    })
+                    love.graphics.setStencilTest()
+                end
+            end
         end
     end
-
-    return motion
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
-local function triggerOpportunityWobble(opportunityCard)
-    if not opportunityCard then
-        return
+-- Returns the topmost hovered card that has effect text (any type)
+local function getTopHoveredCardWithEffect(worldX, worldY)
+    if not worldX or not worldY then return nil end
+    for i = #cards, 1, -1 do
+        local card = cards[i]
+        if card:containsPoint(worldX, worldY) then
+            local effect = card.effect
+            if effect and effect ~= "" then return card end
+            return nil
+        end
     end
+    return nil
+end
 
-    opportunityCard.clickWobble = {
-        elapsed = 0,
-        duration = OPPORTUNITY_WOBBLE_DURATION,
-        amplitude = OPPORTUNITY_WOBBLE_AMPLITUDE,
-        cycles = OPPORTUNITY_WOBBLE_CYCLES,
-    }
+local function drawCardHoverOverlay(card)
+    if not card then return end
+    local effectText = card.effect
+    if not effectText or effectText == "" then return end
+
+    local viewportScale = Scaling.getScale()
+    if viewportScale <= 0 then viewportScale = 1 end
+    love.graphics.setFont(Theme.fonts.cardBody)
+    local font = love.graphics.getFont()
+    local textScale = 1 / viewportScale
+    local textMaxWidth = math.max(1, card.width - PERSON_HOVER_PADDING_X * 2)
+    local textWrapWidth = textMaxWidth * viewportScale
+    local _, wrappedLines = font:getWrap(effectText, textWrapWidth)
+    local lineCount = math.max(1, #wrappedLines)
+    local textHeight = lineCount * font:getHeight() * textScale
+    local overlayHeight = math.max(PERSON_HOVER_MIN_HEIGHT, PERSON_HOVER_PADDING_Y * 2 + textHeight)
+    local hoverColors = Theme.colors.personHover
+    local overlayX = card.x
+    local overlayY = math.max(8, card.y - overlayHeight - PERSON_HOVER_GAP)
+    local textY = overlayY + math.max(PERSON_HOVER_PADDING_Y, (overlayHeight - textHeight) * 0.5)
+    UiPanel.drawShadow(overlayX, overlayY, card.width, overlayHeight, UiShadow.get("tooltip"))
+    UiPanel.drawPanel(overlayX, overlayY, card.width, overlayHeight, {
+        bodyColor = hoverColors.fill,
+        borderColor = hoverColors.border,
+    })
+    love.graphics.setColor(hoverColors.text)
+    love.graphics.printf(effectText, overlayX + PERSON_HOVER_PADDING_X, textY,
+        textWrapWidth, "center", 0, textScale, textScale)
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 local function updatePhysicalCardMotions(dt)
@@ -955,8 +1061,8 @@ local function updatePhysicalCardMotions(dt)
                 motion.restHold = motion.restHold or 0.06
                 motion.startX = motion.startX or card.x
                 motion.startY = motion.startY or card.y
-                motion.endX = motion.endX or motion.settleX or card.x
-                motion.endY = motion.endY or motion.floorY or card.y
+                motion.endX = motion.endX or card.x
+                motion.endY = motion.endY or card.y
                 motion.arcHeights = motion.arcHeights or { 38, 24, 0 }
                 motion.arcSplits = motion.arcSplits or { 0.46, 0.76 }
                 motion.tilt = motion.tilt or 0.11
@@ -986,16 +1092,12 @@ local function updatePhysicalCardMotions(dt)
 
             local lift = 0
             if progress < splitA then
-                local u = progress / splitA
-                lift = math.sin(u * math.pi) * (motion.arcHeights[1] or 38)
+                lift = math.sin((progress / splitA) * math.pi) * (motion.arcHeights[1] or 38)
             elseif progress < splitB then
-                local u = (progress - splitA) / (splitB - splitA)
-                lift = math.sin(u * math.pi) * (motion.arcHeights[2] or 24)
+                lift = math.sin(((progress - splitA) / (splitB - splitA)) * math.pi) * (motion.arcHeights[2] or 24)
             elseif progress < 1 then
-                local u = (progress - splitB) / (1 - splitB)
-                lift = math.sin(u * math.pi) * (motion.arcHeights[3] or 14)
+                lift = math.sin(((progress - splitB) / (1 - splitB)) * math.pi) * (motion.arcHeights[3] or 14)
             end
-
             card.y = lerp(motion.startY, motion.endY, moveT) - lift
 
             if progress >= 1 then
@@ -1011,513 +1113,51 @@ local function updatePhysicalCardMotions(dt)
             end
 
             local direction = (motion.endX >= motion.startX) and 1 or -1
-            local tiltWave = math.sin(progress * math.pi) * (motion.tilt or 0.11) * direction
-            card.rotation = damp(card.rotation or 0, tiltWave, 10, dt)
-
+            card.rotation = damp(card.rotation or 0, math.sin(progress * math.pi) * (motion.tilt or 0.11) * direction, 10,
+                dt)
             card.x = clamp(card.x, 0, WORLD_WIDTH - (card.width or CARD_WIDTH))
             card.y = clamp(card.y, 0, WORLD_HEIGHT - (card.height or CARD_HEIGHT))
             card.targetX = card.x
             card.targetY = card.y
             card.renderAlpha = 1
         else
-            local targetRotation = 0
-            local wobble = card.clickWobble
-            if wobble then
-                wobble.elapsed = (wobble.elapsed or 0) + dt
-                local duration = math.max(0.001, wobble.duration or OPPORTUNITY_WOBBLE_DURATION)
-                local t = clamp((wobble.elapsed or 0) / duration, 0, 1)
-                local fade = (1 - t) * (1 - t)
-                local cycles = wobble.cycles or OPPORTUNITY_WOBBLE_CYCLES
-                local wave = math.sin(t * math.pi * 2 * cycles)
-                targetRotation = wave * (wobble.amplitude or OPPORTUNITY_WOBBLE_AMPLITUDE) * fade
-
-                if t >= 1 then
-                    card.clickWobble = nil
-                    targetRotation = 0
-                end
-            end
-
-            card.rotation = damp(card.rotation or 0, targetRotation, 18, dt)
+            card.rotation = damp(card.rotation or 0, 0, 18, dt)
             card.renderAlpha = 1
         end
     end
 end
 
-local function updateAttachedCardTargets()
+-- ── Sync game-state counters from card board ──────────────────────────────────
+
+local function syncGameStateCounters()
+    gameState.bugCount = countCardsByType("bug")
+    gameState.burnoutCount = countCardsByType("burnout")
+    -- Money is always the sum of money cards on the board
+    local total = 0
     for _, card in ipairs(cards) do
-        if card.stackParentId and not card:isDragging() and not card.motionState then
-            local parent = getCardById(card.stackParentId)
-            if parent then
-                card.targetX = clamp(parent.targetX, 0, WORLD_WIDTH - (card.width or CARD_WIDTH))
-                card.targetY = clamp(parent.targetY + STACK_OFFSET_Y, 0, WORLD_HEIGHT - (card.height or CARD_HEIGHT))
-            else
-                card.stackParentId = nil
-            end
+        if card.cardType == "money" then
+            total = total + (card.moneyAmount or 1)
         end
     end
+    gameState.money = total
 end
 
-local function drawWorkBars()
-    local workBarColors = Theme.colors.workBar
-    for _, workerCard in ipairs(cards) do
-        if workerCard.cardType == "person" then
-            local activeFeature = getDirectChildOfType(workerCard, "feature")
-            if activeFeature and not activeFeature:isFeatureComplete() then
-                local barX = workerCard.x
-                local stackTopY = math.min(workerCard.y, activeFeature.y)
-                local barY = stackTopY - WORK_BAR_HEIGHT + 7
-
-                local progress = clamp((workerCard.workProgress or 0) / WORK_CYCLE_SECONDS, 0, 1)
-                local innerPadding = 3
-
-                UiPanel.drawPanel(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, {
-                    bodyColor = workBarColors.track,
-                    borderColor = workBarColors.border,
-                })
-
-                local innerX = barX + innerPadding
-                local innerY = barY + innerPadding
-                local innerWidth = math.max(0, CARD_WIDTH - innerPadding * 2)
-                local innerHeight = math.max(0, WORK_BAR_HEIGHT - innerPadding * 2)
-                local progressWidth = innerWidth * progress
-
-                if progressWidth > 0 and innerHeight > 0 then
-                    love.graphics.stencil(function()
-                        love.graphics.rectangle("fill", innerX, innerY, progressWidth, innerHeight)
-                    end, "replace", 1)
-                    love.graphics.setStencilTest("equal", 1)
-
-                    -- Draw full-size fill once and reveal only a cropped part.
-                    UiPanel.drawSurface(
-                        innerX,
-                        innerY,
-                        innerWidth,
-                        innerHeight,
-                        workBarColors.border,
-                        {
-                            destLeft = 4,
-                            destRight = 4,
-                            destTop = 4,
-                            destBottom = 4,
-                        }
-                    )
-
-                    love.graphics.setStencilTest()
-                end
-            end
-        end
-    end
-
-    love.graphics.setColor(1, 1, 1, 1)
-end
-
-local function getPersonEffectText(card)
-    local effectText = card and card.effect
-    if not effectText or effectText == "" then
-        return "No special talents"
-    end
-    return effectText
-end
-
-local function getTopHoveredPersonCard(worldX, worldY)
-    if not worldX or not worldY then
-        return nil
-    end
-
-    for i = #cards, 1, -1 do
-        local card = cards[i]
-        if card:containsPoint(worldX, worldY) then
-            if card.cardType == "person" then
-                return card
-            end
-            return nil
-        end
-    end
-
-    return nil
-end
-
-local function drawPersonHoverOverlay(card)
-    if not card then
-        return
-    end
-
-    local viewportScale = Scaling.getScale()
-    if viewportScale <= 0 then
-        viewportScale = 1
-    end
-
-    love.graphics.setFont(Theme.fonts.cardBody)
-    local effectText = getPersonEffectText(card)
-    local font = love.graphics.getFont()
-    local textScale = 1 / viewportScale
-    local textMaxWidth = math.max(1, card.width - PERSON_HOVER_PADDING_X * 2)
-    local textWrapWidth = textMaxWidth * viewportScale
-    local _, wrappedLines = font:getWrap(effectText, textWrapWidth)
-    local lineCount = math.max(1, #wrappedLines)
-    local textHeight = lineCount * font:getHeight() * textScale
-    local overlayHeight = math.max(PERSON_HOVER_MIN_HEIGHT, PERSON_HOVER_PADDING_Y * 2 + textHeight)
-
-    local hoverColors = Theme.colors.personHover
-    local overlayX = card.x
-    local overlayY = math.max(8, card.y - overlayHeight - PERSON_HOVER_GAP)
-    local textY = overlayY + math.max(PERSON_HOVER_PADDING_Y, (overlayHeight - textHeight) * 0.5)
-
-    UiPanel.drawShadow(overlayX, overlayY, card.width, overlayHeight, UiShadow.get("tooltip"))
-    UiPanel.drawPanel(overlayX, overlayY, card.width, overlayHeight, {
-        bodyColor = hoverColors.fill,
-        borderColor = hoverColors.border,
-    })
-
-    love.graphics.setColor(hoverColors.text)
-    love.graphics.printf(
-        effectText,
-        overlayX + PERSON_HOVER_PADDING_X,
-        textY,
-        textWrapWidth,
-        "center",
-        0,
-        textScale,
-        textScale
-    )
-
-    love.graphics.setColor(1, 1, 1, 1)
-end
-
-local function drawConsultingHoverOverlay(consultingRect)
-    if not consultingRect then
-        return
-    end
-
-    local viewportScale = Scaling.getScale()
-    if viewportScale <= 0 then
-        viewportScale = 1
-    end
-
-    local hoverColors = Theme.colors.consultingHover
-    local overlayX = consultingRect.x
-    local overlayY = math.max(8, consultingRect.y - CONSULTING_HOVER_HEIGHT - CONSULTING_HOVER_GAP)
-
-    UiPanel.drawShadow(overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT, UiShadow.get("tooltip"))
-    UiPanel.drawPanel(overlayX, overlayY, consultingRect.width, CONSULTING_HOVER_HEIGHT, {
-        bodyColor = hoverColors.fill,
-        borderColor = hoverColors.border,
-    })
-
-    love.graphics.setFont(Theme.fonts.cardBody)
-    love.graphics.setColor(hoverColors.text)
-    drawConsultingPriceLine(
-        overlayX,
-        overlayY + 18,
-        consultingRect.width,
-        CONSULTING_ZONE.cost,
-        viewportScale
-    )
-
-    love.graphics.setColor(1, 1, 1, 1)
-end
-
-local function drawCardWithEffects(card, options)
-    options = options or {}
-
-    local drawOptions = {
-        skipShadow = options.skipShadow,
-        bodyFont = Theme.fonts.cardBody,
-        valueFont = Theme.fonts.cardBody,
-    }
-
-    drawOptions.alpha = card.renderAlpha or 1
-
-    card:draw(Theme.fonts.cardHeader, drawOptions)
-end
-
-local function drawNewDayButton()
-    local button = getNewDayButtonRect()
-    local viewportScale = Scaling.getScale()
-    if viewportScale <= 0 then
-        viewportScale = 1
-    end
-
-    local buttonColors = Theme.colors.newDayButton
-    UiButton.draw(button, "Start New Day", {
-        font = Theme.fonts.uiButton,
-        bodyColor = buttonColors.fill,
-        hoverBodyColor = buttonColors.fillHover,
-        pressedBodyColor = buttonColors.fillPressed,
-        borderColor = buttonColors.border,
-        textColor = buttonColors.text,
-        isHovered = newDayButtonHovered,
-        isPressed = newDayButtonPressed,
-    })
-
-    love.graphics.setFont(Theme.fonts.cardBody)
-    local labelColor = buttonColors.label
-    love.graphics.setColor(labelColor[1], labelColor[2], labelColor[3], (labelColor[4] or 1) * 0.75)
-    love.graphics.printf(
-        "Day " .. tostring(state.day or 1),
-        button.x,
-        button.y - 30,
-        button.width * viewportScale,
-        "center",
-        0,
-        1 / viewportScale,
-        1 / viewportScale
-    )
-
-    love.graphics.setColor(1, 1, 1, 1)
-end
-
-local function pointInRect(x, y, rect)
-    return x >= rect.x and x <= rect.x + rect.width
-        and y >= rect.y and y <= rect.y + rect.height
-end
-
-local function isCardCenterInsideRect(card, rect)
-    if not card or not rect then
-        return false
-    end
-
-    local centerX = (card.targetX or card.x) + card.width * 0.5
-    local centerY = (card.targetY or card.y) + card.height * 0.5
-    local centerGameX, centerGameY = worldToGame(centerX, centerY)
-    return pointInRect(centerGameX, centerGameY, rect)
-end
-
-local function isConsultingDropCandidate(card)
-    return card ~= nil
-        and card.cardType == "money"
-        and not card.motionState
-        and not card.shipState
-end
-
-local function isConsultingDropActive()
-    local rootCard = dragRootCard or draggingCards[1]
-    return isConsultingDropCandidate(rootCard) and isCardCenterInsideRect(rootCard, getConsultingRect())
-end
-
-local function drawConsultingZone(gameX, gameY)
-    local zone = getConsultingRect()
-    local activeDrop = isConsultingDropActive()
-    local hovered = gameX and gameY and pointInRect(gameX, gameY, zone) or false
-    local raised = activeDrop or hovered
-    local viewportScale = Scaling.getScale()
-    if viewportScale <= 0 then
-        viewportScale = 1
-    end
-
-    local zoneColors = Theme.colors.consultingZone
-    local bodyColor = raised and zoneColors.bodyRaised or zoneColors.body
-    local headerColor = raised and zoneColors.headerRaised or zoneColors.header
-    local customHeaderHeight = math.floor((Card.HEADER_HEIGHT or 34) * 1.55)
-
-    UiPanel.drawShadow(zone.x, zone.y, zone.width, zone.height, UiShadow.get("panel"))
-    UiPanel.drawPanel(zone.x, zone.y, zone.width, zone.height, {
-        bodyColor = bodyColor,
-        headerColor = headerColor,
-        headerHeight = customHeaderHeight,
-        borderColor = zoneColors.border,
-    })
-
-    local iconTheme = (Theme.card and Theme.card.icon) or {}
-    -- visually match feature cards which have padded areas
-    local iconSize = math.floor((tonumber(iconTheme.featureSize) or 74) * 0.82)
-    local iconAreaTop = zone.y + customHeaderHeight
-    local iconAreaHeight = zone.height - customHeaderHeight
-    local consultingImage = getConsultingZoneImage()
-
-    if consultingImage then
-        local circleImage = getCircleBgIconImage()
-        if circleImage then
-            local targetSize = iconSize * 0.9
-            local cScale = math.min(targetSize / circleImage:getWidth(), targetSize / circleImage:getHeight())
-            local cWidth = circleImage:getWidth() * cScale
-            local cHeight = circleImage:getHeight() * cScale
-            local cX = zone.x + (zone.width - cWidth) * 0.5
-            local cY = iconAreaTop + (iconAreaHeight - cHeight) * 0.5
-            love.graphics.setColor(headerColor[1], headerColor[2], headerColor[3], 1)
-            love.graphics.draw(circleImage, cX, cY, 0, cScale, cScale)
-        end
-
-        local iconScale = math.min(iconSize / consultingImage:getWidth(), iconSize / consultingImage:getHeight())
-        local drawWidth = consultingImage:getWidth() * iconScale
-        local drawHeight = consultingImage:getHeight() * iconScale
-        local drawX = zone.x + (zone.width - drawWidth) * 0.5
-        local drawY = iconAreaTop + (iconAreaHeight - drawHeight) * 0.5
-        local iconColor = Theme.colors.icon
-        love.graphics.setColor(iconColor[1], iconColor[2], iconColor[3], 1)
-        love.graphics.draw(consultingImage, drawX, drawY, 0, iconScale, iconScale)
-    end
-
-    love.graphics.setFont(Theme.fonts.cardHeader)
-    love.graphics.setColor(zoneColors.text)
-
-    local headerFontRef = love.graphics.getFont()
-    local headerScale = 1 / viewportScale
-    local singleLineHeight = headerFontRef:getHeight() * headerScale
-    local lineSpacing = singleLineHeight * 0.75
-    local totalTextHeight = singleLineHeight + lineSpacing
-    local titleY = zone.y + (customHeaderHeight - totalTextHeight) * 0.5
-
-    love.graphics.printf(
-        "Business",
-        zone.x,
-        titleY,
-        zone.width * viewportScale,
-        "center",
-        0,
-        headerScale,
-        headerScale
-    )
-    love.graphics.printf(
-        "Consulting",
-        zone.x,
-        titleY + lineSpacing,
-        zone.width * viewportScale,
-        "center",
-        0,
-        headerScale,
-        headerScale
-    )
-
-    love.graphics.setColor(1, 1, 1, 1)
-end
-
-local function spawnHighValueOpportunityCard()
-    local zone = getConsultingRect()
-    local targetGameX = zone.x + zone.width + 56
-    local targetGameY = zone.y - BOOSTER_PACK_HEIGHT - 22
-    local startGameX = zone.x + (zone.width - BOOSTER_PACK_WIDTH) * 0.5
-    local startGameY = zone.y + (zone.height - BOOSTER_PACK_HEIGHT) * 0.5
-
-    local worldTargetX, worldTargetY = gameToWorld(targetGameX, targetGameY)
-    local worldStartX, worldStartY = gameToWorld(startGameX, startGameY)
-    local targetX = clamp(worldTargetX, 0, WORLD_WIDTH - BOOSTER_PACK_WIDTH)
-    local targetY = clamp(worldTargetY, 0, WORLD_HEIGHT - BOOSTER_PACK_HEIGHT)
-
-    local startX = clamp(worldStartX, 0, WORLD_WIDTH - BOOSTER_PACK_WIDTH)
-    local startY = clamp(worldStartY, 0, WORLD_HEIGHT - BOOSTER_PACK_HEIGHT)
-
-    local opportunityCard = createBoosterPack({
-        cardType = "opportunity",
-        title = "Actionable Insights",
-        insightsRemaining = OPPORTUNITY_CLICK_LIMIT,
-        x = startX,
-        y = startY,
-        targetX = startX,
-        targetY = startY,
-    })
-
-    opportunityCard.motionState = createSideBounceMotion(
-        startX,
-        startY,
-        targetX,
-        targetY,
-        {
-            duration = 0.52,
-            restHold = 0.04,
-            arcHeights = { 30, 18, 0 },
-            arcSplits = { 0.45, 0.78 },
-            xSplits = { 0.62, 0.86 },
-            tilt = 0.09,
-        }
-    )
-
-    table.insert(cards, opportunityCard)
-    bringCardsToFront({ opportunityCard })
-    return opportunityCard
-end
-
-consumeMoneyAtConsulting = function(card)
-    if not isConsultingDropCandidate(card) then
-        return false
-    end
-
-    if not isCardCenterInsideRect(card, getConsultingRect()) then
-        return false
-    end
-
-    removeCardInstance(card)
-    spawnHighValueOpportunityCard()
-    return true
-end
-
-local function isOpportunityClickable(card)
-    return card ~= nil
-        and card.cardType == "opportunity"
-        and not card.motionState
-        and not card.shipState
-        and not card.stackParentId
-        and (card.insightsRemaining or 0) > 0
-end
-
-local function triggerOpportunityClick(opportunityCard)
-    if not opportunityCard or not isOpportunityClickable(opportunityCard) then
-        return
-    end
-
-    triggerOpportunityWobble(opportunityCard)
-
-    local sourceWidth = opportunityCard.width or CARD_WIDTH
-    local sourceHeight = opportunityCard.height or CARD_HEIGHT
-    local originX = clamp(opportunityCard.x, 0, WORLD_WIDTH - sourceWidth)
-    local originY = clamp(opportunityCard.y, 0, WORLD_HEIGHT - sourceHeight)
-
-    local burstTargets = {
-        { dx = -220, dy = -110 },
-        { dx = 0,    dy = -185 },
-        { dx = 220,  dy = -110 },
-    }
-
-    local remaining = math.max(0, math.floor(opportunityCard.insightsRemaining or 0))
-    local clickIndex = OPPORTUNITY_CLICK_LIMIT - remaining + 1
-    local burst = burstTargets[math.min(math.max(clickIndex, 1), #burstTargets)]
-    local targetX = clamp(originX + burst.dx, 0, WORLD_WIDTH - CARD_WIDTH)
-    local targetY = clamp(originY + burst.dy, 0, WORLD_HEIGHT - CARD_HEIGHT)
-
-    local quickWinCard = createCard({
-        cardType = "feature",
-        title = "Quick Win",
-        costTotal = 2,
-        costRemaining = 2,
-        value = 1,
-        x = originX,
-        y = originY,
-        targetX = originX,
-        targetY = originY,
-    })
-
-    quickWinCard.motionState = createSideBounceMotion(originX, originY, targetX, targetY)
-    table.insert(cards, quickWinCard)
-
-    opportunityCard.insightsRemaining = remaining - 1
-    if opportunityCard.insightsRemaining <= 0 then
-        removeCardInstance(opportunityCard)
-        bringCardsToFront({ quickWinCard })
-    else
-        bringCardsToFront({ opportunityCard, quickWinCard })
-    end
-end
+-- ── Hot reload ────────────────────────────────────────────────────────────────
 
 local function configureHotReload()
     HotReload.getState = function()
         serializeCards()
-        state.camera = {
-            x = camera.x,
-            y = camera.y,
-            zoom = camera.zoom,
-        }
+        state.camera = { x = camera.x, y = camera.y, zoom = camera.zoom }
+        state.sprint = Sprint.serialize()
+        state.gameState = copyState(gameState)
         return copyState(state)
     end
 
     HotReload.setState = function(saved)
-        if type(saved) ~= "table" then
-            return
-        end
-
+        if type(saved) ~= "table" then return end
         local restored = copyState(saved)
 
         state.time = restored.time or 0
-        state.day = restored.day or 1
         state.nextCardId = restored.nextCardId or 1
         state.camera = restored.camera
 
@@ -1534,6 +1174,16 @@ local function configureHotReload()
             clampCamera()
         end
 
+        if type(restored.sprint) == "table" then
+            Sprint.deserialize(restored.sprint)
+        end
+
+        if type(restored.gameState) == "table" then
+            for k, v in pairs(restored.gameState) do
+                gameState[k] = v
+            end
+        end
+
         bootstrapCards()
         draggingCards = {}
         dragRootCard = nil
@@ -1541,8 +1191,6 @@ local function configureHotReload()
         dragPressStartScreenX = nil
         dragPressStartScreenY = nil
         panningWorld = false
-        newDayButtonPressed = false
-        newDayButtonHovered = false
     end
 
     HotReload.onReload = function()
@@ -1551,18 +1199,16 @@ local function configureHotReload()
             print("Hot reload failed while loading main.lua")
             return
         end
-
         local okRun, runErr = pcall(chunkOrErr)
         if not okRun then
             print("Hot reload failed while executing main.lua: " .. tostring(runErr))
             return
         end
-
-        if love.load then
-            love.load(true)
-        end
+        if love.load then love.load(true) end
     end
 end
+
+-- ── love callbacks ────────────────────────────────────────────────────────────
 
 function love.load(isReload)
     Scaling.init({
@@ -1576,10 +1222,17 @@ function love.load(isReload)
 
     if not isReload then
         state.time = 0
-        state.day = 1
         state.nextCardId = 1
         state.cards = nil
         state.camera = nil
+        state.sprint = nil
+        state.gameState = nil
+        Sprint.reset()
+        gameState.money = 0 -- will be synced from card counts each frame
+        gameState.bugCount = 0
+        gameState.burnoutCount = 0
+        gameState.hireCount = 0
+        coffeeMachineTimer = 0
     end
 
     bootstrapCards()
@@ -1600,9 +1253,6 @@ function love.load(isReload)
     dragPressStartScreenX = nil
     dragPressStartScreenY = nil
     panningWorld = false
-    consultingHover = 0
-    newDayButtonPressed = false
-    newDayButtonHovered = false
 
     configureHotReload()
 end
@@ -1614,20 +1264,23 @@ function love.update(dt)
     local gameX, gameY = screenToGame(mouseX, mouseY)
     local worldX, worldY = gameToWorld(gameX, gameY)
 
-    local consultingRect = getConsultingRect()
-    local consultingHovered = gameX and gameY and pointInRect(gameX, gameY, consultingRect) or false
-    local newDayButtonRect = getNewDayButtonRect()
-    newDayButtonHovered = gameX and gameY and pointInRect(gameX, gameY, newDayButtonRect) or false
-    local consultingRaised = consultingHovered or isConsultingDropActive()
-    consultingHover = damp(consultingHover, consultingRaised and 1 or 0, 18, dt)
+    local sprintPhase = Sprint.getState().phase
 
-    updateAttachedCardTargets()
-    updateWorkerProgress(dt)
+    -- Only update game logic when playing or resolving (not on win/lose screens)
+    if sprintPhase ~= "won" and sprintPhase ~= "lost" then
+        updateAttachedCardTargets()
+        updateRecipes(dt)
+        updateCoffeeMachine(dt)
+        checkInfrastructureTriggers()
+        syncGameStateCounters()
+
+        -- Update sprint
+        Sprint.update(dt, makeCallbacks())
+    end
 
     for _, card in ipairs(cards) do
         if not card.motionState then
-            local pointerX = nil
-            local pointerY = nil
+            local pointerX, pointerY = nil, nil
             if card:isDragging() then
                 pointerX = worldX
                 pointerY = worldY
@@ -1638,11 +1291,13 @@ function love.update(dt)
 
     updatePhysicalCardMotions(dt)
 
-    state.camera = {
-        x = camera.x,
-        y = camera.y,
-        zoom = camera.zoom,
-    }
+    -- HUD replay button hover
+    local sprintState = Sprint.getState()
+    if sprintState.phase == "won" or sprintState.phase == "lost" then
+        Hud.updateReplayButton(gameX, gameY, love.mouse.isDown(1))
+    end
+
+    state.camera = { x = camera.x, y = camera.y, zoom = camera.zoom }
     serializeCards()
     HotReload:update(dt)
 end
@@ -1652,9 +1307,7 @@ function love.draw()
         local mouseX, mouseY = love.mouse.getPosition()
         local gameX, gameY = screenToGame(mouseX, mouseY)
         local worldX, worldY = gameToWorld(gameX, gameY)
-        local hoveredPersonCard = getTopHoveredPersonCard(worldX, worldY)
-        local consultingRect = getConsultingRect()
-        local consultingHovered = gameX and gameY and pointInRect(gameX, gameY, consultingRect) or false
+        local hoveredPersonCard = getTopHoveredCardWithEffect(worldX, worldY)
 
         love.graphics.push()
         love.graphics.scale(camera.zoom, camera.zoom)
@@ -1669,25 +1322,23 @@ function love.draw()
         end
 
         drawWorkBars()
-        drawPersonHoverOverlay(hoveredPersonCard)
+        drawCardHoverOverlay(hoveredPersonCard)
         drawDragStackShadow()
 
         for _, card in ipairs(cards) do
             if isCardDragging(card) then
-                drawCardWithEffects(card, { skipShadow = card.cardType ~= "opportunity" })
+                drawCardWithEffects(card, { skipShadow = false })
             end
         end
 
         love.graphics.pop()
 
-        drawConsultingZone(gameX, gameY)
-        if consultingHovered then
-            drawConsultingHoverOverlay(consultingRect)
-        end
-        drawNewDayButton()
+        -- HUD (screen space)
+        local viewportScale = Scaling.getScale()
+        Hud.draw(gameState, Sprint.getState(), viewportScale)
 
         love.graphics.setFont(Theme.fonts.default)
-        HotReload:draw(APP_HEIGHT, Scaling.getScale())
+        HotReload:draw(APP_HEIGHT, viewportScale)
     end)
 end
 
@@ -1701,14 +1352,29 @@ function love.keypressed(key)
         HotReload:reload()
         return
     end
-
     if key == "escape" then
         love.event.quit()
     end
 end
 
 function love.mousepressed(x, y, button)
-    if button ~= 1 then
+    if button ~= 1 then return end
+
+    local gameX, gameY = screenToGame(x, y)
+    if not gameX or not gameY then return end
+
+    local sprintPhase = Sprint.getState().phase
+
+    -- Win/lose screen: only handle replay button
+    if sprintPhase == "won" or sprintPhase == "lost" then
+        if Hud.isReplayButtonClicked(gameX, gameY) then
+            love.load(false)
+        end
+        return
+    end
+
+    -- During sprint resolving/summary: block card interaction
+    if sprintPhase == "resolving" or sprintPhase == "summary" then
         return
     end
 
@@ -1717,20 +1383,6 @@ function love.mousepressed(x, y, button)
         stickyDragMode = false
         dragPressStartScreenX = nil
         dragPressStartScreenY = nil
-        return
-    end
-
-    local gameX, gameY = screenToGame(x, y)
-    if not gameX or not gameY then
-        return
-    end
-
-    if pointInRect(gameX, gameY, getNewDayButtonRect()) then
-        newDayButtonPressed = true
-        return
-    end
-
-    if pointInRect(gameX, gameY, getConsultingRect()) then
         return
     end
 
@@ -1763,31 +1415,16 @@ function love.mousepressed(x, y, button)
 end
 
 function love.mousereleased(x, y, button)
-    if button ~= 1 then
-        return
-    end
-
-    if newDayButtonPressed then
-        newDayButtonPressed = false
-        local gameX, gameY = screenToGame(x, y)
-        if gameX and gameY and pointInRect(gameX, gameY, getNewDayButtonRect()) then
-            startNewDay()
-        end
-        return
-    end
+    if button ~= 1 then return end
 
     if panningWorld then
         panningWorld = false
         return
     end
 
-    if #draggingCards == 0 then
-        return
-    end
+    if #draggingCards == 0 then return end
 
-    if stickyDragMode then
-        return
-    end
+    if stickyDragMode then return end
 
     local dx = x - (dragPressStartScreenX or x)
     local dy = y - (dragPressStartScreenY or y)
@@ -1797,18 +1434,7 @@ function love.mousereleased(x, y, button)
         endDragSelection()
         stickyDragMode = false
     else
-        local rootCard = dragRootCard or draggingCards[1]
-        if isOpportunityClickable(rootCard) then
-            for _, card in ipairs(draggingCards) do
-                card:endDrag()
-            end
-            draggingCards = {}
-            dragRootCard = nil
-            stickyDragMode = false
-            triggerOpportunityClick(rootCard)
-        else
-            stickyDragMode = true
-        end
+        stickyDragMode = true
     end
 
     dragPressStartScreenX = nil
@@ -1816,44 +1442,28 @@ function love.mousereleased(x, y, button)
 end
 
 function love.mousemoved(_, _, dx, dy)
-    if not panningWorld then
-        return
-    end
-
+    if not panningWorld then return end
     if not love.mouse.isDown(1) then
         panningWorld = false
         return
     end
-
     local viewportScale = Scaling.getScale()
-    if viewportScale <= 0 then
-        viewportScale = 1
-    end
-
-    local gameDx = dx / viewportScale
-    local gameDy = dy / viewportScale
-    camera.x = camera.x - (gameDx / camera.zoom)
-    camera.y = camera.y - (gameDy / camera.zoom)
+    if viewportScale <= 0 then viewportScale = 1 end
+    camera.x = camera.x - (dx / viewportScale) / camera.zoom
+    camera.y = camera.y - (dy / viewportScale) / camera.zoom
     clampCamera()
 end
 
 function love.wheelmoved(_, y)
-    if y == 0 then
-        return
-    end
-
+    if y == 0 then return end
     local mouseX, mouseY = love.mouse.getPosition()
     local gameX, gameY = screenToGame(mouseX, mouseY)
     local anchorGameX = gameX or (APP_WIDTH * 0.5)
     local anchorGameY = gameY or (APP_HEIGHT * 0.5)
     local anchorWorldX, anchorWorldY = gameToWorld(anchorGameX, anchorGameY)
-
     local targetZoom = camera.zoom * (camera.zoomStep ^ y)
     targetZoom = clamp(targetZoom, camera.minZoom, camera.maxZoom)
-    if targetZoom == camera.zoom then
-        return
-    end
-
+    if targetZoom == camera.zoom then return end
     camera.zoom = targetZoom
     camera.x = anchorWorldX - (anchorGameX / camera.zoom)
     camera.y = anchorWorldY - (anchorGameY / camera.zoom)

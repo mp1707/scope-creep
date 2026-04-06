@@ -41,6 +41,18 @@ Theme.palette = {
     red = hexColor("#E38B7E"),
     green = hexColor("#8BC18D"),
     greenSoft = hexColor("#D2EDD5"),
+    -- New card type colors
+    specAmber = hexColor("#E8C547"),
+    specAmberSoft = hexColor("#FFF0A0"),
+    rcPurpleHeader = hexColor("#C3A0E8"),
+    rcPurpleBody = hexColor("#F2EDFF"),
+    shippedGreen = hexColor("#5BAD6A"),
+    burnoutRed = hexColor("#C94040"),
+    burnoutRedSoft = hexColor("#FFE5E5"),
+    deadlineOrange = hexColor("#E87A30"),
+    deadlineOrangeSoft = hexColor("#FFF0E0"),
+    coffeeBody = hexColor("#D4A96A"),
+    coffeeSoft = hexColor("#FFF6E8"),
 }
 
 Theme.colors = {
@@ -169,6 +181,67 @@ Theme.cardStyles = {
         borderColor = Theme.palette.ink,
         textColor = Theme.palette.ink,
     },
+    -- New card types for the prototype
+    request = {
+        bodyColor = Theme.palette.featureBody,
+        headerColor = Theme.palette.featureHeader,
+        borderColor = Theme.palette.ink,
+        textColor = Theme.palette.ink,
+    },
+    spec = {
+        bodyColor = Theme.palette.specAmberSoft,
+        headerColor = Theme.palette.specAmber,
+        borderColor = Theme.palette.ink,
+        textColor = Theme.palette.ink,
+    },
+    build = {
+        bodyColor = Theme.palette.developerBody,
+        headerColor = Theme.palette.developerHeader,
+        borderColor = Theme.palette.ink,
+        textColor = Theme.palette.ink,
+    },
+    release = {
+        bodyColor = Theme.palette.rcPurpleBody,
+        headerColor = Theme.palette.rcPurpleHeader,
+        borderColor = Theme.palette.ink,
+        textColor = Theme.palette.ink,
+    },
+    shipped = {
+        bodyColor = Theme.palette.greenSoft,
+        headerColor = Theme.palette.shippedGreen,
+        borderColor = Theme.palette.ink,
+        textColor = Theme.palette.ink,
+    },
+    burnout = {
+        bodyColor = Theme.palette.burnoutRedSoft,
+        headerColor = Theme.palette.burnoutRed,
+        borderColor = Theme.palette.ink,
+        textColor = Theme.palette.ink,
+    },
+    deadline = {
+        bodyColor = Theme.palette.deadlineOrangeSoft,
+        headerColor = Theme.palette.deadlineOrange,
+        borderColor = Theme.palette.ink,
+        textColor = Theme.palette.ink,
+    },
+    coffee = {
+        bodyColor = Theme.palette.coffeeSoft,
+        headerColor = Theme.palette.coffeeBody,
+        borderColor = Theme.palette.ink,
+        textColor = Theme.palette.ink,
+    },
+    infrastructure = {
+        bodyColor = Theme.palette.greenSoft,
+        headerColor = Theme.palette.green,
+        borderColor = Theme.palette.ink,
+        textColor = Theme.palette.ink,
+    },
+    tech_debt = {
+        bodyColor = Theme.palette.featureBodySoft,
+        headerColor = Theme.palette.red,
+        borderColor = Theme.palette.ink,
+        textColor = Theme.palette.ink,
+    },
 }
 
 Theme.fonts = {}
@@ -193,10 +266,10 @@ Theme.card = {
         sourceRight = 56,
         sourceTop = 56,
         sourceBottom = 56,
-        drawLeft = 11,
-        drawRight = 11,
-        drawTop = 11,
-        drawBottom = 11,
+        drawLeft = 16,
+        drawRight = 16,
+        drawTop = 16,
+        drawBottom = 16,
     },
 }
 
@@ -211,10 +284,10 @@ Theme.ui = {
         sourceRight = 56,
         sourceTop = 56,
         sourceBottom = 56,
-        destLeft = 11,
-        destRight = 11,
-        destTop = 11,
-        destBottom = 11,
+        destLeft = 16,
+        destRight = 16,
+        destTop = 16,
+        destBottom = 16,
     },
     surface9slice = {
         path = "assets/handdrawn/ui/9sliceSurface.png",
@@ -226,17 +299,17 @@ Theme.ui = {
         sourceRight = 56,
         sourceTop = 56,
         sourceBottom = 56,
-        destLeft = 11,
-        destRight = 11,
-        destTop = 11,
-        destBottom = 11,
+        destLeft = 16,
+        destRight = 16,
+        destTop = 16,
+        destBottom = 16,
     },
 }
 
 local FONT_DEFS = {
     default = { path = "assets/fonts/PatrickHand-Regular.ttf", size = 32 },
     title = { path = "assets/fonts/PatrickHand-Regular.ttf", size = 96 },
-    cardHeader = { path = "assets/fonts/PatrickHand-Regular.ttf", size = 22 },
+    cardHeader = { path = "assets/fonts/PatrickHand-Regular.ttf", size = 20 },
     cardBody = { path = "assets/fonts/PatrickHand-Regular.ttf", size = 16 },
     uiButton = { path = "assets/fonts/PatrickHand-Regular.ttf", size = 22 },
 }
