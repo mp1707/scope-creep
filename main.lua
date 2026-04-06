@@ -43,11 +43,11 @@ local OFFICE_BACKGROUND_PATH = "assets/handdrawn/officebg.png"
 local MONEY_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/moneySmall.png"
 local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/circleBig.png"
 
-local WORK_BAR_HEIGHT = 28
-local PERSON_HOVER_MIN_HEIGHT = 32
-local PERSON_HOVER_GAP = 14
-local PERSON_HOVER_PADDING_X = 10
-local PERSON_HOVER_PADDING_Y = 8
+local WORK_BAR_HEIGHT    = 28
+local CARD_ADDON_GAP     = 3   -- gap: card→bar, bar→tooltip
+local TOOLTIP_MIN_HEIGHT = 36
+local TOOLTIP_PADDING_X  = 14
+local TOOLTIP_PADDING_Y  = 12
 
 -- ── Module-level state ────────────────────────────────────────────────────────
 
@@ -971,34 +971,52 @@ local function drawWorkBars()
 
                 local barX = parentCard.x
                 local stackTopY = math.min(parentCard.y, childCard.y)
-                local barY = stackTopY - WORK_BAR_HEIGHT + 7
-                local innerPadding = 3
+                local barY = stackTopY - CARD_ADDON_GAP - WORK_BAR_HEIGHT
+                -- 1. Track background (full bar)
+                UiPanel.drawSurface(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, workBarColors.track)
 
-                UiPanel.drawPanel(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, {
-                    bodyColor = workBarColors.track,
-                    borderColor = workBarColors.border,
-                })
-
-                local innerX = barX + innerPadding
-                local innerY = barY + innerPadding
-                local innerWidth = math.max(0, CARD_WIDTH - innerPadding * 2)
-                local innerHeight = math.max(0, WORK_BAR_HEIGHT - innerPadding * 2)
-                local progressWidth = innerWidth * progress
-
-                if progressWidth > 0 and innerHeight > 0 then
-                    love.graphics.stencil(function()
-                        love.graphics.rectangle("fill", innerX, innerY, progressWidth, innerHeight)
-                    end, "replace", 1)
-                    love.graphics.setStencilTest("equal", 1)
-                    UiPanel.drawSurface(innerX, innerY, innerWidth, innerHeight, workBarColors.border, {
-                        destLeft = 4, destRight = 4, destTop = 4, destBottom = 4,
-                    })
-                    love.graphics.setStencilTest()
+                -- 2. Fill: draw the full-width surface in fill color, scissor-clipped to progressWidth.
+                --    Drawing at full width keeps the left pill corners perfectly shaped; the scissor
+                --    cuts the right edge cleanly without distorting the 9-slice corner scaling.
+                if progress > 0 then
+                    local sx1, sy1 = love.graphics.transformPoint(barX, barY)
+                    local sx2, sy2 = love.graphics.transformPoint(barX + CARD_WIDTH * progress, barY + WORK_BAR_HEIGHT)
+                    love.graphics.setScissor(
+                        math.floor(sx1), math.floor(sy1),
+                        math.ceil(sx2) - math.floor(sx1),
+                        math.ceil(sy2) - math.floor(sy1)
+                    )
+                    UiPanel.drawSurface(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, workBarColors.border)
+                    love.graphics.setScissor()
                 end
+
+                -- 3. Border on top (same scaling as card)
+                UiPanel.drawBorder(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, workBarColors.border)
             end
         end
     end
     love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- Returns the top Y of the work bar for the given card's stack, or nil if none active
+local function getActiveWorkBarY(card)
+    if not card then return nil end
+    -- Case A: card is the parent with an active child
+    for _, c in ipairs(cards) do
+        if c.recipeActive and c.stackParentId == card.id then
+            local stackTopY = math.min(card.y, c.y)
+            return stackTopY - CARD_ADDON_GAP - WORK_BAR_HEIGHT
+        end
+    end
+    -- Case B: card is the active child
+    if card.recipeActive and card.stackParentId then
+        local parentCard = getCardById(card.stackParentId)
+        if parentCard and not parentCard.motionState then
+            local stackTopY = math.min(parentCard.y, card.y)
+            return stackTopY - CARD_ADDON_GAP - WORK_BAR_HEIGHT
+        end
+    end
+    return nil
 end
 
 -- Returns the topmost hovered card that has effect text (any type)
@@ -1025,23 +1043,28 @@ local function drawCardHoverOverlay(card)
     love.graphics.setFont(Theme.fonts.cardBody)
     local font = love.graphics.getFont()
     local textScale = 1 / viewportScale
-    local textMaxWidth = math.max(1, card.width - PERSON_HOVER_PADDING_X * 2)
+    local textMaxWidth = math.max(1, card.width - TOOLTIP_PADDING_X * 2)
     local textWrapWidth = textMaxWidth * viewportScale
     local _, wrappedLines = font:getWrap(effectText, textWrapWidth)
     local lineCount = math.max(1, #wrappedLines)
     local textHeight = lineCount * font:getHeight() * textScale
-    local overlayHeight = math.max(PERSON_HOVER_MIN_HEIGHT, PERSON_HOVER_PADDING_Y * 2 + textHeight)
+    local overlayHeight = math.max(TOOLTIP_MIN_HEIGHT, TOOLTIP_PADDING_Y * 2 + textHeight)
+
+    -- Anchor above work bar if present, otherwise above card top
+    local workBarY = getActiveWorkBarY(card)
+    local referenceY = workBarY ~= nil and workBarY or card.y
+    local overlayY = math.max(8, referenceY - overlayHeight - CARD_ADDON_GAP)
+
     local hoverColors = Theme.colors.personHover
     local overlayX = card.x
-    local overlayY = math.max(8, card.y - overlayHeight - PERSON_HOVER_GAP)
-    local textY = overlayY + math.max(PERSON_HOVER_PADDING_Y, (overlayHeight - textHeight) * 0.5)
+    local textY = overlayY + math.max(TOOLTIP_PADDING_Y, (overlayHeight - textHeight) * 0.5)
     UiPanel.drawShadow(overlayX, overlayY, card.width, overlayHeight, UiShadow.get("tooltip"))
     UiPanel.drawPanel(overlayX, overlayY, card.width, overlayHeight, {
         bodyColor = hoverColors.fill,
         borderColor = hoverColors.border,
     })
     love.graphics.setColor(hoverColors.text)
-    love.graphics.printf(effectText, overlayX + PERSON_HOVER_PADDING_X, textY,
+    love.graphics.printf(effectText, overlayX + TOOLTIP_PADDING_X, textY,
         textWrapWidth, "center", 0, textScale, textScale)
     love.graphics.setColor(1, 1, 1, 1)
 end
