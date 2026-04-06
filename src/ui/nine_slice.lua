@@ -183,6 +183,8 @@ function NineSlice.draw(imagePath, x, y, width, height, options)
     local alpha = tonumber(options.alpha) or 1
     local tint = options.tint or { 1, 1, 1, 1 }
     local drawCenter = options.drawCenter ~= false
+    local drawEdges = options.drawEdges ~= false
+    local drawCorners = options.drawCorners ~= false
     love.graphics.setColor(tint[1] or 1, tint[2] or 1, tint[3] or 1, (tint[4] or 1) * alpha)
 
     local leftX = x
@@ -192,19 +194,31 @@ function NineSlice.draw(imagePath, x, y, width, height, options)
     local middleY = y + drawTop
     local bottomY = y + drawTop + drawMiddleHeight
 
-    drawPart(image, quads.topLeft, leftX, topY, drawLeft, drawTop, source.left, source.top)
-    drawPart(image, quads.top, middleX, topY, drawMiddleWidth, drawTop, source.centerWidth, source.top)
-    drawPart(image, quads.topRight, rightX, topY, drawRight, drawTop, source.right, source.top)
+    if drawCorners then
+        drawPart(image, quads.topLeft, leftX, topY, drawLeft, drawTop, source.left, source.top)
+        drawPart(image, quads.topRight, rightX, topY, drawRight, drawTop, source.right, source.top)
+    end
+    if drawEdges then
+        drawPart(image, quads.top, middleX, topY, drawMiddleWidth, drawTop, source.centerWidth, source.top)
+    end
 
-    drawPart(image, quads.left, leftX, middleY, drawLeft, drawMiddleHeight, source.left, source.centerHeight)
+    if drawEdges then
+        drawPart(image, quads.left, leftX, middleY, drawLeft, drawMiddleHeight, source.left, source.centerHeight)
+    end
     if drawCenter then
         drawPart(image, quads.center, middleX, middleY, drawMiddleWidth, drawMiddleHeight, source.centerWidth, source.centerHeight)
     end
-    drawPart(image, quads.right, rightX, middleY, drawRight, drawMiddleHeight, source.right, source.centerHeight)
+    if drawEdges then
+        drawPart(image, quads.right, rightX, middleY, drawRight, drawMiddleHeight, source.right, source.centerHeight)
+    end
 
-    drawPart(image, quads.bottomLeft, leftX, bottomY, drawLeft, drawBottom, source.left, source.bottom)
-    drawPart(image, quads.bottom, middleX, bottomY, drawMiddleWidth, drawBottom, source.centerWidth, source.bottom)
-    drawPart(image, quads.bottomRight, rightX, bottomY, drawRight, drawBottom, source.right, source.bottom)
+    if drawCorners then
+        drawPart(image, quads.bottomLeft, leftX, bottomY, drawLeft, drawBottom, source.left, source.bottom)
+        drawPart(image, quads.bottomRight, rightX, bottomY, drawRight, drawBottom, source.right, source.bottom)
+    end
+    if drawEdges then
+        drawPart(image, quads.bottom, middleX, bottomY, drawMiddleWidth, drawBottom, source.centerWidth, source.bottom)
+    end
 
     return true
 end

@@ -101,6 +101,9 @@ function UiPanel.drawShadow(x, y, width, height, options)
     local offsetX = tonumber(options.offsetX) or 0
     local offsetY = tonumber(options.offsetY) or 0
     local alpha = tonumber(options.alpha) or 0.2
+    if alpha <= 0 then
+        return
+    end
 
     local shadowX = x - expand * 0.5 + offsetX
     local shadowY = y - expand * 0.5 + offsetY
@@ -115,14 +118,22 @@ function UiPanel.drawShadow(x, y, width, height, options)
     }
 
     local tint = Theme.colors.shadowTint
-    UiPanel.drawSurface(shadowX, shadowY, shadowWidth, shadowHeight, tint, {
+    local shadowSliceOptions = {
         alpha = alpha,
         destLeft = insets.destLeft,
         destRight = insets.destRight,
         destTop = insets.destTop,
         destBottom = insets.destBottom,
+        sourceLeft = tonumber(options.sourceLeft),
+        sourceRight = tonumber(options.sourceRight),
+        sourceTop = tonumber(options.sourceTop),
+        sourceBottom = tonumber(options.sourceBottom),
         formFactor = options.formFactor,
-    })
+    }
+
+    -- Keep shadow geometry in lock-step with panel silhouette (surface + border 9-slice).
+    UiPanel.drawSurface(shadowX, shadowY, shadowWidth, shadowHeight, tint, shadowSliceOptions)
+    UiPanel.drawBorder(shadowX, shadowY, shadowWidth, shadowHeight, tint, shadowSliceOptions)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
