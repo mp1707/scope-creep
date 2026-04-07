@@ -30,7 +30,7 @@ Theme.palette = {
     ink = hexColor("#1A2A3A"),
     white = hexColor("#FFFFFF"),
     black = hexColor("#000000"),
-    uiBackground = hexColor("#F4EFE4"),
+    uiBackground = hexColor("#EEF3F7"),
     developerHeader = hexColor("#AEDBFF"),
     developerBody = hexColor("#F2FAFF"),
     featureHeader = hexColor("#F1D878"),
@@ -96,6 +96,14 @@ Theme.colors = {
         border = Theme.palette.ink,
         fill = Theme.palette.ink,
     },
+    dragFocus = {
+        backdrop = withAlpha(Theme.palette.ink, 0.32),
+        glowPrimary = hexColor("#6A9CC4"),
+        glowSecondary = hexColor("#DCECF8"),
+        nonTargetCardAlpha = 0.3,
+        nonTargetWorkBarAlpha = 0.24,
+    },
+    backgroundWash = withAlpha(hexColor("#F1F6FB"), 0.34),
     reloadToast = {
         text = Theme.palette.ink,
         shadow = withAlpha(Theme.palette.black, 0.35),

@@ -57,6 +57,8 @@ local CARD_ADDON_GAP     = 3   -- gap: card→bar, bar→tooltip
 local TOOLTIP_MIN_HEIGHT = 36
 local TOOLTIP_PADDING_X  = 14
 local TOOLTIP_PADDING_Y  = 12
+local DRAG_FOCUS_PULSE_SPEED = 3.2
+local DRAG_FOCUS_DIM_PULSE_SPEED = 2.1
 
 -- ── Module-level state ────────────────────────────────────────────────────────
 
@@ -134,6 +136,11 @@ end
 local function easeOutQuad(t)
     local inv = 1 - t
     return 1 - (inv * inv)
+end
+
+local function setColorWithAlpha(color, alphaMultiplier)
+    local alpha = (color[4] or 1) * (alphaMultiplier or 1)
+    love.graphics.setColor(color[1], color[2], color[3], alpha)
 end
 
 local function getOfficeBackgroundImage()
@@ -982,13 +989,119 @@ end
 local function drawOfficeBackground()
     local backgroundImage = getOfficeBackgroundImage()
     if backgroundImage then
-        love.graphics.setColor(1, 1, 1, 1)
+        local bgTint = Theme.colors.background or { 1, 1, 1, 1 }
+        local bgTintAlpha = 1
+        setColorWithAlpha(bgTint, bgTintAlpha)
         drawImageCover(backgroundImage, 0, 0, WORLD_WIDTH, WORLD_HEIGHT)
+        local washColor = Theme.colors.backgroundWash
+        if washColor then
+            setColorWithAlpha(washColor, 1)
+            love.graphics.rectangle("fill", 0, 0, WORLD_WIDTH, WORLD_HEIGHT)
+        end
+        love.graphics.setColor(1, 1, 1, 1)
         return
     end
     local fallbackColor = Theme.colors.background
     love.graphics.setColor(fallbackColor[1], fallbackColor[2], fallbackColor[3], fallbackColor[4] or 1)
     love.graphics.rectangle("fill", 0, 0, WORLD_WIDTH, WORLD_HEIGHT)
+    local washColor = Theme.colors.backgroundWash
+    if washColor then
+        setColorWithAlpha(washColor, 0.6)
+        love.graphics.rectangle("fill", 0, 0, WORLD_WIDTH, WORLD_HEIGHT)
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+local function collectDragInteractableTargets()
+    if #draggingCards == 0 then return nil end
+
+    local rootCard = dragRootCard or draggingCards[1]
+    if not rootCard then return nil end
+    if rootCard.objectType == "booster_pack" then return nil end
+
+    local excludedCards = {}
+    for _, card in ipairs(draggingCards) do
+        excludedCards[card] = true
+    end
+
+    local targetSet = {}
+    local targetList = {}
+    for _, candidate in ipairs(cards) do
+        if not excludedCards[candidate] and canAttachCard(rootCard, candidate, excludedCards) then
+            targetSet[candidate] = true
+            table.insert(targetList, candidate)
+        end
+    end
+
+    if #targetList == 0 then
+        return nil
+    end
+
+    return {
+        root = rootCard,
+        targets = targetSet,
+        list = targetList,
+    }
+end
+
+local function drawDragFocusBackdrop(strength)
+    local focusColors = Theme.colors.dragFocus or {}
+    local backdropColor = focusColors.backdrop or { 0.08, 0.1, 0.12, 0.18 }
+    setColorWithAlpha(backdropColor, strength or 1)
+    love.graphics.rectangle("fill", 0, 0, WORLD_WIDTH, WORLD_HEIGHT)
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+local function drawDragTargetGlow(targetCards, glowStrength)
+    if not targetCards or #targetCards == 0 then return end
+    local strength = clamp(glowStrength or 1, 0, 1.25)
+    local focusColors = Theme.colors.dragFocus or {}
+    local pulse = 0.5 + (0.5 * math.sin((state.time or 0) * DRAG_FOCUS_PULSE_SPEED))
+    local glowPrimary = focusColors.glowPrimary or Theme.palette.featureHeader
+    local glowSecondary = focusColors.glowSecondary or Theme.palette.featureBody
+
+    for _, card in ipairs(targetCards) do
+        local outerPad = 40 + (pulse * 7)
+        local midPad = 24 + (pulse * 5)
+        local innerPad = 12 + (pulse * 3)
+
+        UiPanel.drawSurface(
+            card.x - outerPad,
+            card.y - outerPad,
+            card.width + (outerPad * 2),
+            card.height + (outerPad * 2),
+            glowPrimary,
+            { alpha = (0.12 + (pulse * 0.05)) * strength }
+        )
+
+        UiPanel.drawSurface(
+            card.x - midPad,
+            card.y - midPad,
+            card.width + (midPad * 2),
+            card.height + (midPad * 2),
+            glowSecondary,
+            { alpha = (0.17 + (pulse * 0.08)) * strength }
+        )
+
+        UiPanel.drawSurface(
+            card.x - innerPad,
+            card.y - innerPad,
+            card.width + (innerPad * 2),
+            card.height + (innerPad * 2),
+            glowPrimary,
+            { alpha = (0.22 + (pulse * 0.1)) * strength }
+        )
+
+        UiPanel.drawBorder(
+            card.x - 4,
+            card.y - 4,
+            card.width + 8,
+            card.height + 8,
+            glowSecondary,
+            { alpha = (0.32 + (pulse * 0.11)) * strength }
+        )
+    end
+
     love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -998,7 +1111,7 @@ local function drawCardWithEffects(card, options)
         skipShadow = options.skipShadow,
         bodyFont = Theme.fonts.cardBody,
         valueFont = Theme.fonts.cardBody,
-        alpha = card.renderAlpha or 1,
+        alpha = (card.renderAlpha or 1) * (options.alphaMultiplier or 1),
     }
     card:draw(Theme.fonts.cardHeader, drawOptions)
 end
@@ -1050,7 +1163,8 @@ local function computeCapsuleFillRight(fillX, fillWidth, radius, progress)
     return fillX + cap + (fillWidth - cap) * p
 end
 
-local function drawWorkBars()
+local function drawWorkBars(alphaMultiplier)
+    local alpha = clamp(alphaMultiplier or 1, 0, 1)
     local workBarColors = Theme.colors.workBar
     for _, childCard in ipairs(cards) do
         if childCard.recipeActive and childCard.stackParentId then
@@ -1062,7 +1176,7 @@ local function drawWorkBars()
                 local barX = parentCard.x
                 local stackTopY = math.min(parentCard.y, childCard.y)
                 local barY = stackTopY - CARD_ADDON_GAP - WORK_BAR_HEIGHT
-                UiPanel.drawSurface(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, workBarColors.track)
+                UiPanel.drawSurface(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, workBarColors.track, { alpha = alpha })
 
                 -- Simple fill: plain rounded rect inside the static border.
                 local fillX = barX + WORK_BAR_FILL_MARGIN_X
@@ -1083,7 +1197,7 @@ local function drawWorkBars()
                         local bodyX = leftCenterX
                         local bodyWidth = rightCenterX - leftCenterX
 
-                        love.graphics.setColor(fillColor)
+                        setColorWithAlpha(fillColor, alpha)
                         love.graphics.circle("fill", leftCenterX, centerY, cap, 20)
                         if bodyWidth > 0 then
                             love.graphics.rectangle("fill", bodyX, fillY, bodyWidth, fillHeight)
@@ -1092,7 +1206,7 @@ local function drawWorkBars()
                     end
                 end
 
-                UiPanel.drawBorder(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, workBarColors.border)
+                UiPanel.drawBorder(barX, barY, CARD_WIDTH, WORK_BAR_HEIGHT, workBarColors.border, { alpha = alpha })
             end
         end
     end
@@ -1431,7 +1545,11 @@ function love.draw()
         local mouseX, mouseY = love.mouse.getPosition()
         local gameX, gameY = screenToGame(mouseX, mouseY)
         local worldX, worldY = gameToWorld(gameX, gameY)
-        local hoveredPersonCard = getTopHoveredCardWithEffect(worldX, worldY)
+        local dragFocus = collectDragInteractableTargets()
+        local dragFocusActive = dragFocus ~= nil
+        local dimPulse = 0.9 + (0.1 * math.sin((state.time or 0) * DRAG_FOCUS_DIM_PULSE_SPEED))
+        local backdropStrength = 0.95 + (0.18 * dimPulse)
+        local glowStrength = 0.9 + (0.2 * dimPulse)
 
         love.graphics.push()
         love.graphics.scale(camera.zoom, camera.zoom)
@@ -1439,14 +1557,33 @@ function love.draw()
 
         drawOfficeBackground()
 
-        for _, card in ipairs(cards) do
-            if not isCardDragging(card) then
-                drawCardWithEffects(card)
+        if dragFocusActive then
+            for _, card in ipairs(cards) do
+                if not isCardDragging(card) then
+                    drawCardWithEffects(card)
+                end
             end
+
+            drawWorkBars(1)
+            drawDragFocusBackdrop(backdropStrength)
+            drawDragTargetGlow(dragFocus.list, glowStrength)
+
+            for _, card in ipairs(cards) do
+                if not isCardDragging(card) and dragFocus.targets[card] then
+                    drawCardWithEffects(card)
+                end
+            end
+        else
+            local hoveredPersonCard = getTopHoveredCardWithEffect(worldX, worldY)
+            for _, card in ipairs(cards) do
+                if not isCardDragging(card) then
+                    drawCardWithEffects(card)
+                end
+            end
+            drawWorkBars(1)
+            drawCardHoverOverlay(hoveredPersonCard)
         end
 
-        drawWorkBars()
-        drawCardHoverOverlay(hoveredPersonCard)
         drawDragStackShadow()
 
         for _, card in ipairs(cards) do
