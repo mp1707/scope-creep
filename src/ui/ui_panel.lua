@@ -131,9 +131,7 @@ function UiPanel.drawShadow(x, y, width, height, options)
         formFactor = options.formFactor,
     }
 
-    -- Keep shadow geometry in lock-step with panel silhouette (surface + border 9-slice).
-    UiPanel.drawSurface(shadowX, shadowY, shadowWidth, shadowHeight, tint, shadowSliceOptions)
-    UiPanel.drawBorder(shadowX, shadowY, shadowWidth, shadowHeight, tint, shadowSliceOptions)
+    drawNineSlice(Theme.ui.shadow9slice, shadowX, shadowY, shadowWidth, shadowHeight, tint, shadowSliceOptions)
     love.graphics.setColor(1, 1, 1, 1)
 end
 

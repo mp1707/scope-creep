@@ -305,6 +305,21 @@ Theme.ui = {
         destTop = 16,
         destBottom = 16,
     },
+    shadow9slice = {
+        path = "assets/handdrawn/ui/9sliceShadow.png",
+        sourceX = 0,
+        sourceY = 0,
+        sourceWidth = 256,
+        sourceHeight = 256,
+        sourceLeft = 56,
+        sourceRight = 56,
+        sourceTop = 56,
+        sourceBottom = 56,
+        destLeft = 16,
+        destRight = 16,
+        destTop = 16,
+        destBottom = 16,
+    },
     surface9sliceFormFactors = {
         round = {
             path = "assets/handdrawn/ui/9sliceSurface.png",
