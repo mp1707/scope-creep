@@ -2,6 +2,7 @@ local HotReload = require("src.core.hot_reload")
 local Scaling = require("src.core.scaling")
 local Theme = require("src.ui.theme")
 local Card = require("src.ui.card")
+local BoosterPack = require("src.ui.booster_pack")
 local UiPanel = require("src.ui.ui_panel")
 local UiShadow = require("src.ui.ui_shadow")
 local CardDefs = require("src.core.card_defs")
@@ -19,6 +20,8 @@ local CARD_BODY_ASPECT_HEIGHT = 280
 local CARD_WIDTH = 150
 local CARD_BODY_HEIGHT = math.floor((CARD_WIDTH * CARD_BODY_ASPECT_HEIGHT / CARD_BODY_ASPECT_WIDTH) + 0.5)
 local CARD_HEIGHT = (Card.HEADER_HEIGHT or 34) + CARD_BODY_HEIGHT
+local BOOSTER_PACK_WIDTH_SCALE = 1.265
+local BOOSTER_PACK_ASPECT = 1280 / 1024
 
 local STACK_OFFSET_Y = (Card.HEADER_HEIGHT or 34) - 14
 local STACK_SNAP_DISTANCE = 80
@@ -42,6 +45,8 @@ local BUSINESS_OPP_COST = 2
 local OFFICE_BACKGROUND_PATH = "assets/handdrawn/officebg.png"
 local MONEY_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/moneySmall.png"
 local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/circleBig.png"
+local BOOSTER_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
+local BOOSTER_ICON_CIRCLE_PATH = "assets/handdrawn/ui/circleBig.png"
 
 local WORK_BAR_HEIGHT    = 28
 local WORK_BAR_FILL_MARGIN_X = 6
@@ -109,6 +114,7 @@ local addMoney
 local spendMoney
 local spawnMoneyCards
 local removeMoneyCards
+local createBoosterPackUiTest
 
 -- ── Helper functions ──────────────────────────────────────────────────────────
 
@@ -440,6 +446,33 @@ local function createCard(config)
 end
 
 local function createBoardObject(config)
+    if type(config) == "table" and config.objectType == "booster_pack" then
+        return BoosterPack.new({
+            id = config.id or allocateCardId(),
+            objectType = config.objectType,
+            cardType = config.cardType,
+            role = config.role,
+            subType = config.subType,
+            effect = config.effect,
+            x = config.x,
+            y = config.y,
+            targetX = config.targetX,
+            targetY = config.targetY,
+            width = config.width,
+            height = config.height,
+            worldWidth = WORLD_WIDTH,
+            worldHeight = WORLD_HEIGHT,
+            topText = config.topText,
+            bottomText = config.bottomText,
+            iconPath = config.iconPath,
+            iconCirclePath = config.iconCirclePath,
+            backgroundColor = config.backgroundColor,
+            borderColor = config.borderColor,
+            textColor = config.textColor,
+            iconColor = config.iconColor,
+            iconCircleColor = config.iconCircleColor,
+        })
+    end
     return createCard(config)
 end
 
@@ -508,6 +541,8 @@ local function createStartingCards()
         local card = createCard(config)
         table.insert(result, card)
     end
+
+    table.insert(result, createBoardObject(createBoosterPackUiTest()))
     return result
 end
 
@@ -528,9 +563,48 @@ end
 local function bootstrapCards()
     if type(state.cards) == "table" then
         cards = restoreCardsFromSnapshot(state.cards)
-        return
+    else
+        cards = createStartingCards()
     end
-    cards = createStartingCards()
+
+    local hasBoosterPack = false
+    for _, card in ipairs(cards) do
+        if card.objectType == "booster_pack" then
+            hasBoosterPack = true
+            break
+        end
+    end
+    if not hasBoosterPack then
+        table.insert(cards, createBoardObject(createBoosterPackUiTest()))
+    end
+end
+
+createBoosterPackUiTest = function()
+    local boosterWidth = math.floor((CARD_WIDTH * BOOSTER_PACK_WIDTH_SCALE) + 0.5)
+    local boosterHeight = math.floor((boosterWidth * BOOSTER_PACK_ASPECT) + 0.5)
+    local x = clamp(GRID_ORIGIN_X + (GRID_COL_SPACING * 4.1), 0, WORLD_WIDTH - boosterWidth)
+    local y = clamp(GRID_ORIGIN_Y + (GRID_ROW_SPACING * 0.1), 0, WORLD_HEIGHT - boosterHeight)
+    local borderColor = Theme.cardStyles and Theme.cardStyles.default and Theme.cardStyles.default.borderColor
+
+    return {
+        objectType = "booster_pack",
+        cardType = "booster_pack",
+        x = x,
+        y = y,
+        targetX = x,
+        targetY = y,
+        width = boosterWidth,
+        height = boosterHeight,
+        topText = "Feature",
+        bottomText = "Ideas",
+        iconPath = BOOSTER_ICON_PATH,
+        iconCirclePath = BOOSTER_ICON_CIRCLE_PATH,
+        backgroundColor = { 0.78, 0.91, 1.0, 1.0 },
+        borderColor = borderColor or Theme.colors.borderStrong,
+        textColor = Theme.colors.textPrimary,
+        iconColor = Theme.colors.icon,
+        iconCircleColor = { 0.58, 0.76, 0.95, 1.0 },
+    }
 end
 
 local function serializeCards()
@@ -550,6 +624,7 @@ local function canAttachCard(cardToSnap, targetCard, excludedCards)
     if cardToSnap == targetCard then return false end
     if isCardLocked(cardToSnap) or isCardLocked(targetCard) then return false end
     if isDescendant(targetCard, cardToSnap) then return false end
+    if cardToSnap.objectType == "booster_pack" or targetCard.objectType == "booster_pack" then return false end
 
     -- Person cards can never stack on anything
     if cardToSnap.cardType == "person" then return false end
@@ -930,6 +1005,9 @@ end
 
 local function drawDragStackShadow()
     if #draggingCards == 0 then return end
+    if #draggingCards == 1 and draggingCards[1].objectType == "booster_pack" then
+        return
+    end
     local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
     local shadowSource = nil
     for _, card in ipairs(draggingCards) do
