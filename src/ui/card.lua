@@ -10,16 +10,15 @@ Card.HEADER_HEIGHT = 48
 
 local CARD_PADDING = 11
 local FOOTER_HEIGHT = 26
-local FEATURE_PIP_SIZE = 15
-local FEATURE_PIP_GAP = -3
+local BODY_ICON_VERTICAL_BIAS = -0.2
+local PERSON_ICON_VERTICAL_BIAS = -0.55
 
 local CARD_BODY_ASPECT_WIDTH = 300
-local CARD_BODY_ASPECT_HEIGHT = 350
+local CARD_BODY_ASPECT_HEIGHT = 280
 
 local MONEY_ICON_PATH = "assets/handdrawn/cardIcons/money.png"
 local MONEY_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/moneySmall.png"
 local FEATURE_ICON_PATH = "assets/handdrawn/cardIcons/star.png"
-local DOT_SMALL_ICON_PATH = "assets/handdrawn/smallIcons/dotSmall.png"
 local DEFAULT_ICON_PATH = FEATURE_ICON_PATH
 local CIRCLE_BG_ICON_PATH = "assets/handdrawn/ui/circleBig.png"
 
@@ -486,22 +485,13 @@ function Card:drawBodyContent(alpha)
     local headerHeight = Card.HEADER_HEIGHT
     local bodyTop = self.y + headerHeight
     local bodyBottom = self.y + self.height
-    local footerTop = bodyBottom - FOOTER_HEIGHT
 
     local iconAreaX = self.x + CARD_PADDING
     local iconAreaY = bodyTop + CARD_PADDING
     local iconAreaWidth = self.width - CARD_PADDING * 2
-    local iconAreaHeight = math.max(1, footerTop - iconAreaY - CARD_PADDING)
+    local iconAreaHeight = math.max(1, bodyBottom - iconAreaY - CARD_PADDING)
 
     local cardType = self.cardType
-    if cardType == "feature" and (self.costTotal or 0) > 0 and not self:isFeatureComplete() then
-        iconAreaY = iconAreaY + FEATURE_PIP_SIZE + FEATURE_PIP_GAP + 4
-        iconAreaHeight = math.max(1, footerTop - iconAreaY - CARD_PADDING)
-    elseif (cardType == "person" or cardType == "developer")
-        and ((tonumber(self.maxFocus) or 0) > 0 or (tonumber(self.maxCapacity) or 0) > 0) then
-        iconAreaY = iconAreaY + FEATURE_PIP_SIZE + FEATURE_PIP_GAP + 4
-        iconAreaHeight = math.max(1, footerTop - iconAreaY - CARD_PADDING)
-    end
 
     if cardType == "opportunity" then
         local textColor = self:getStyleColor("textColor")
@@ -568,7 +558,7 @@ function Card:drawBodyContent(alpha)
         if circleImage then
             local circleTint = { headerColor[1], headerColor[2], headerColor[3], 1 }
             drawIconInArea(circleImage, iconAreaX, iconAreaY, iconAreaWidth, iconAreaHeight,
-                fallbackSize * 0.9, { verticalBias = -0.06, alpha = alpha, tint = circleTint })
+                fallbackSize * 0.9, { verticalBias = BODY_ICON_VERTICAL_BIAS, alpha = alpha, tint = circleTint })
         end
         local viewportScale = Scaling.getScale()
         if viewportScale <= 0 then viewportScale = 1 end
@@ -579,8 +569,9 @@ function Card:drawBodyContent(alpha)
         local letterScale = (fallbackSize * 0.55) / math.max(1, letterFont:getHeight() / viewportScale)
         local letterW = letterFont:getWidth(firstLetter) * (letterScale / viewportScale)
         local letterH = letterFont:getHeight() * (letterScale / viewportScale)
+        local freeY = math.max(0, iconAreaHeight - letterH)
         local lx = iconAreaX + (iconAreaWidth - letterW) * 0.5
-        local ly = iconAreaY + (iconAreaHeight - letterH) * 0.5 - iconAreaHeight * 0.06
+        local ly = iconAreaY + (freeY * 0.5) + (freeY * BODY_ICON_VERTICAL_BIAS)
         love.graphics.setColor(applyAlpha(self:getStyleColor("textColor"), alpha))
         love.graphics.print(firstLetter, lx, ly, 0, letterScale / viewportScale, letterScale / viewportScale)
         love.graphics.setFont(prevFont)
@@ -588,7 +579,7 @@ function Card:drawBodyContent(alpha)
     end
 
     if cardType == "person" or cardType == "developer" then
-        local targetSize = math.min(getBodyIconTargetSize(cardType, self.height), iconAreaWidth, iconAreaHeight)
+        local targetSize = math.min(getBodyIconTargetSize(cardType, self.height), iconAreaWidth, iconAreaHeight * 0.92)
 
         local circleImage = getCardIconImage(CIRCLE_BG_ICON_PATH)
         if circleImage then
@@ -602,9 +593,9 @@ function Card:drawBodyContent(alpha)
                 iconAreaHeight,
                 targetSize * 0.9,
                 {
-                    verticalBias = -0.06,
                     alpha = alpha,
-                    tint = circleTint
+                    tint = circleTint,
+                    verticalBias = PERSON_ICON_VERTICAL_BIAS,
                 }
             )
         end
@@ -617,20 +608,14 @@ function Card:drawBodyContent(alpha)
             iconAreaHeight,
             targetSize,
             {
-                verticalBias = -0.06,
                 alpha = alpha,
+                verticalBias = PERSON_ICON_VERTICAL_BIAS,
             }
         )
         return
     end
 
     local iconTarget = math.min(getBodyIconTargetSize(cardType, self.height), iconAreaWidth, iconAreaHeight)
-    local verticalBias = -0.08
-    if cardType == "money" or cardType == "resource" then
-        verticalBias = -0.05
-    elseif cardType == "feature" then
-        verticalBias = -0.1
-    end
 
     local circleImage = getCardIconImage(CIRCLE_BG_ICON_PATH)
     if circleImage then
@@ -644,9 +629,9 @@ function Card:drawBodyContent(alpha)
             iconAreaHeight,
             iconTarget * 0.9,
             {
-                verticalBias = verticalBias,
                 alpha = alpha,
-                tint = circleTint
+                tint = circleTint,
+                verticalBias = BODY_ICON_VERTICAL_BIAS,
             }
         )
     end
@@ -660,71 +645,9 @@ function Card:drawBodyContent(alpha)
         iconTarget,
         {
             alpha = alpha,
-            verticalBias = verticalBias,
+            verticalBias = BODY_ICON_VERTICAL_BIAS,
         }
     )
-end
-
-function Card:drawIndicators(alpha)
-    local total = 0
-    local filled = 0
-
-    if self.cardType == "feature" then
-        if self:isFeatureComplete() then
-            return
-        end
-        total = tonumber(self.costTotal) or 0
-        filled = math.max(0, math.floor(tonumber(self.costRemaining) or 0))
-    elseif self.cardType == "person" or self.cardType == "developer" then
-        -- Use focus pips if available, fall back to capacity
-        if self.maxFocus ~= nil then
-            total = tonumber(self.maxFocus) or 0
-            filled = math.max(0, math.floor(tonumber(self.focus) or 0))
-        else
-            total = tonumber(self.maxCapacity) or 0
-            filled = math.max(0, math.floor(tonumber(self.capacity) or 0))
-        end
-    else
-        return
-    end
-
-    if total <= 0 then
-        return
-    end
-
-    local drawTotal = math.min(math.max(0, math.floor(total)), 8)
-    if drawTotal <= 0 then
-        return
-    end
-
-    local dotIcon = getCardIconImage(DOT_SMALL_ICON_PATH)
-    local startX = self.x + CARD_PADDING + (FEATURE_PIP_SIZE * 0.5)
-    local centerY = self.y + Card.HEADER_HEIGHT + CARD_PADDING + (FEATURE_PIP_SIZE * 0.5) - 5
-
-    for i = 1, drawTotal do
-        local centerX = startX + (i - 1) * (FEATURE_PIP_SIZE + FEATURE_PIP_GAP)
-        local isFilled = i <= filled
-        local dotAlpha = isFilled and alpha or (alpha * 0.24)
-        local tint = Theme.colors.icon
-
-        if dotIcon then
-            local dotScale = FEATURE_PIP_SIZE / math.max(dotIcon:getWidth(), dotIcon:getHeight())
-            local drawWidth = dotIcon:getWidth() * dotScale
-            local drawHeight = dotIcon:getHeight() * dotScale
-            love.graphics.setColor(tint[1], tint[2], tint[3], dotAlpha)
-            love.graphics.draw(
-                dotIcon,
-                centerX - drawWidth * 0.5,
-                centerY - drawHeight * 0.5,
-                0,
-                dotScale,
-                dotScale
-            )
-        else
-            love.graphics.setColor(tint[1], tint[2], tint[3], dotAlpha)
-            love.graphics.points(centerX, centerY)
-        end
-    end
 end
 
 function Card:drawFooterInfo(viewportScale, bodyFont, valueFont, alpha)
@@ -872,11 +795,9 @@ function Card:draw(headerFont, options)
         love.graphics.print(titleText, self.x + headerPaddingX, titleY, 0, headerScale, headerScale)
     end
 
-    self:drawIndicators(alpha)
     self:drawBodyContent(alpha)
     drawOpportunityBadge(self, alpha)
     self:drawDeadlineBadge(alpha, viewportScale)
-    self:drawFooterInfo(viewportScale, bodyFont, valueFont, alpha)
 
     love.graphics.pop()
     love.graphics.setLineWidth(1)
