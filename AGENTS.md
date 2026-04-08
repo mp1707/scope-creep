@@ -287,7 +287,68 @@ HUD displays:
 
 ## Project Structure
 
-Gameplay modules:
+### Entrypoint
+
+- `main.lua` — thin LÖVE callback shim. Wires `love.load/update/draw/resize/keypressed/mouse*/wheelmoved` to the modules under `src/app/`. Contains **no** gameplay, rendering, or input logic of its own.
+
+### Application Layer (`src/app/`)
+
+The app layer orchestrates gameplay systems, rendering, state, and input. Dependencies are strictly acyclic and flow top-down through these tiers:
+
+**Tier 1 — Leaf data / pure helpers** (no intra-app deps)
+
+- `constants.lua` — app/world dimensions, card sizes, booster aspect, stack offsets, work bar layout, sprint duration, asset paths.
+- `utils.lua` — pure helpers: `clamp`, `damp`, `lerp`, `easeOutQuad`, `setColorWithAlpha`, `copyState`, `formatTime`.
+- `state.lua` — the mutable board/drag/ui state table. Exposes `reset`, `allocateUid`, `getCardByUid`, `bringCardsToFront`. No other module owns mutable global state.
+
+**Tier 2 — Systems & camera**
+
+- `systems.lua` — holds every `src/game/systems/*` instance plus `recipeById`. Owns `setup()` (construct/reset all systems) and `evaluateStacks()` (stores result in `State.lastStackEval`).
+- `camera.lua` — camera object + `getViewSize`, `clamp`, `centerOn`, `gameToWorld`, `reset`.
+- `background.lua` — office background image load + cover-draw.
+
+**Tier 3 — Card domain (`src/app/cards/`)**
+
+- `queries.lua` — pure read-only predicates over `State.cards`: `getDirectChild`, `isDescendant`, `isCardDragging`, `isCardLocked`, `isPayrollCard`, `isCardInteractive`, `hasRecipeInteraction`, `canAttachCard`, `collectStackFrom`.
+- `motion.lua` — `createSideBounce` motion descriptor + `updatePhysicalCardMotions(dt)` side-bounce stepper.
+- `factory.lua` — card lifecycle: `applyCardRuntimeDefaults`, `spawnCard`, `spawnPack`, `removeCard`, `createStartBoard`. Only place that inserts into or removes from `State.cards`.
+- `stacking.lua` — stack snapping: `findBestStackTarget`, `applyStackSnap`, `updateAttachedCardTargets`.
+
+**Tier 4 — Drag & render**
+
+- `drag.lua` — drag lifecycle: `beginSelection`, `endSelection`, `collectInteractableTargets` (used by the world renderer for focus highlight).
+- `render/cards.lua` — `drawCardWithEffects`, `drawDragFocusBackdrop`, `drawDragTargetGlow`.
+- `render/work_bars.lua` — work-progress capsule bars over active jobs.
+- `render/pack_badge.lua` — booster pack `usesRemaining` badge.
+- `render/fired_labels.lua` — floating `gekündigt` labels driven by `Systems.payday:getFiredLabels()`.
+- `render/hud.lua` — HUD panels (sprint/time/state/speed) + payday & gameover overlay dispatch.
+- `render/world.lua` — orchestrates world-space drawing: camera transform → background → cards (with drag-focus layering) → work bars → dragging cards → fired labels.
+
+**Tier 5 — Flow, simulation, I/O**
+
+- `game_flow.lua` — high-level transitions & shared callbacks:
+  - `systemCallbacks` (spawn/remove) passed to gameplay systems
+  - `runSecurityGameOverCheck`
+  - `resolveCompletion` (recipe completion → spawn/consume cards)
+  - `enterPayday`
+  - `startNextSprintFromPayday`
+  - `bootstrapNewGame`
+- `simulation.lua` — `update(dt)` (time step, work sync/tick, effects, sprint timer, payday poll, gameover check, pack fade) and `updateCards(dt, worldX, worldY)` (per-card update + motion stepping).
+- `serialization.lua` — `serializeCards` / `restoreCards` used by hot reload.
+- `hot_reload_setup.lua` — wires `HotReload.getState`, `setState`, `onReload` against state/systems/camera/serialization.
+- `input.lua` — `keypressed`, `mousepressed`, `mousereleased`, `mousemoved`, `wheelmoved`. Uses `screenToGame` (exported globally by `Scaling`), `Camera.gameToWorld`, `Queries`, `Drag`, and `GameFlow`.
+
+### Dependency Rules
+
+- Dependencies flow strictly downward: Tier 1 → 2 → 3 → 4 → 5. No module requires anything that transitively requires it back.
+- Only `cards/factory.lua` mutates `State.cards` membership. Other modules may mutate fields on existing cards but must not add/remove.
+- Only `systems.lua` constructs gameplay systems. Every other module reads them via `Systems.<name>`.
+- Rendering modules never contain gameplay rules — they read from `State`/`Systems` and draw.
+- `main.lua` only calls into `src/app/*`; it does not reach into `src/game/*` directly.
+
+### Gameplay Layer (`src/game/`)
+
+Unchanged by the refactor. Gameplay rules remain data-driven and system-owned:
 
 - `src/game/defs/`
   - `card_defs.lua`
@@ -307,9 +368,14 @@ Gameplay modules:
   - `payday_overlay.lua`
   - `gameover_overlay.lua`
 
-Entrypoint orchestration:
+### UI Primitives (`src/ui/`)
 
-- `main.lua`
+Generic rendering building blocks reused by the render tier: `card.lua`, `booster_pack.lua`, `ui_panel.lua`, `ui_button.lua`, `ui_shadow.lua`, `nine_slice.lua`, `card_background.lua`, `theme.lua`.
+
+### Core (`src/core/`)
+
+- `scaling.lua` — virtual resolution, letterbox, exports `screenToGame` globally.
+- `hot_reload.lua` — file watcher + reload hook wired by `src/app/hot_reload_setup.lua`.
 
 ## Legacy Cleanup Status
 
